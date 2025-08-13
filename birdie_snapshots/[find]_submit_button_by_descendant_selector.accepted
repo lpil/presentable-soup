@@ -1,0 +1,9 @@
+---
+version: 1.3.2
+title: [find] Submit button by descendant selector
+file: ./test/presentable_soup/lustre_test.gleam
+test_name: find_descendant_by_attribute_test
+---
+<button class="primary" type="submit">
+  Sign In
+</button>

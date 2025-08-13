@@ -1,0 +1,8 @@
+---
+version: 1.3.2
+title: text nodes can have whitespace before
+file: ./test/presentable_soup/soup_test.gleam
+test_name: element_to_string_whitespace_before_text_test
+---
+<h1>
+  space</h1>

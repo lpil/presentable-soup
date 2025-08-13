@@ -1,0 +1,13 @@
+---
+version: 1.3.2
+title: script tags don't have their inner content padded or indented
+file: ./test/presentable_soup/soup_test.gleam
+test_name: element_to_string_preserve_whitespace_element_test
+---
+<div>
+  <script>function main() {
+  console.log(1);
+}
+
+main();</script>
+</div>

@@ -1,4 +1,4 @@
-# presentable_soup
+# Presentable Soup
 
 Querying, scraping, and parsing of HTML. Good for snapshot testing too!
 

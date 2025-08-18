@@ -5,6 +5,8 @@ Querying, scraping, and parsing of HTML. Good for snapshot testing too!
 [![Package Version](https://img.shields.io/hexpm/v/presentable_soup)](https://hex.pm/packages/presentable_soup)
 [![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/presentable_soup/)
 
+This package supports the Gleam Erlang target.
+
 ```sh
 gleam add presentable_soup@1
 ```

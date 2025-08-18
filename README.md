@@ -42,15 +42,15 @@ pub fn main() -> Nil {
   // The `find` function can be used to find a single element in the document
   // that matches the query.
   assert soup.find(in: document, matching: query)
-    == Ok(soup.Element([#("id", "title")], [soup.Text("Presentable Soup")]))
+  // -> Ok(soup.Element([#("id", "title")], [soup.Text("Presentable Soup")]))
 
   // The `find_all` function call be used to find all the elements the match
   // the query.
-  assert soup.find_all(in: document, matching: soup.element([soup.tag("p")]))
-    == Ok([
-      soup.Element([], [soup.Text("Is it good? Yes I think it might be!")]),
-      soup.Element([], [soup.Text("Low memory use even for large documents.")]),
-    ])
+  soup.find_all(in: document, matching: soup.element([soup.tag("p")]))
+  // -> Ok([
+  //   soup.Element([], [soup.Text("Is it good? Yes I think it might be!")]),
+  //   soup.Element([], [soup.Text("Low memory use even for large documents.")]),
+  // ])
 
   // The `descendant` function can be used to make a more complex query that
   // matches elements within some other element.
@@ -58,10 +58,10 @@ pub fn main() -> Nil {
   let query =
     soup.element([soup.tag("aside")])
     |> soup.descendant([soup.tag("p")])
-  assert soup.find_all(in: document, matching: query)
-    == Ok([
-      soup.Element([], [soup.Text("Low memory use even for large documents."),
-    ]))
+  soup.find_all(in: document, matching: query)
+  // -> Ok([
+  //   soup.Element([], [soup.Text("Low memory use even for large documents."),
+  // ]))
 }
 
 // The returned elements can be rendered as HTML. This is especially useful

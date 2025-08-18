@@ -1,7 +1,7 @@
 // IMPORTS ---------------------------------------------------------------------
 
 import birdie
-import presentable_soup/soup
+import presentable_soup as soup
 
 // SINGLE ELEMENTS -------------------------------------------------------------
 

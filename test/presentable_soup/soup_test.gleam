@@ -1,5 +1,5 @@
 import birdie
-import presentable_soup/soup
+import presentable_soup as soup
 
 pub fn element_to_string_preserve_whitespace_element_test() {
   [

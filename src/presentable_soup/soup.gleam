@@ -116,6 +116,22 @@ fn readable_children(
     [] -> out
 
     // Final node
+    [Text(t) as node] -> {
+      case string.trim(t) {
+        "" -> out <> "\n" <> string.repeat("  ", level - 1)
+        _ -> {
+          let out = before_child(out, previous, level, node)
+          let out = readable(out, node, level)
+          case space_after(node) {
+            PermitSpace | ForceSpace ->
+              out <> "\n" <> string.repeat("  ", level - 1)
+            NoSpace -> out
+          }
+        }
+      }
+    }
+
+    // Final node
     [node] -> {
       let out = before_child(out, previous, level, node)
       let out = readable(out, node, level)
@@ -123,6 +139,19 @@ fn readable_children(
         PermitSpace | ForceSpace ->
           out <> "\n" <> string.repeat("  ", level - 1)
         NoSpace -> out
+      }
+    }
+
+    // A node with more to follow
+    [Text(t) as node, ..nodes] -> {
+      case string.trim(t) {
+        "" -> readable_children(out, level, ForceSpace, nodes)
+        _ -> {
+          let out = before_child(out, previous, level, node)
+          let out = readable(out, node, level)
+          let space = space_after(node)
+          readable_children(out, level, space, nodes)
+        }
       }
     }
 

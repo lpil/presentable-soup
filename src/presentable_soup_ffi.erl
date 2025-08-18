@@ -46,7 +46,8 @@ sax(Html, Initial, Fun) ->
                 F(Event)
         end
     end,
-    try htmerl:sax(Html, [{event_fun, EventFun}, {user_state, Initial}]) of
+    Options = [{event_fun, EventFun}, {user_state, Initial}, {preserve_ws, true}],
+    try htmerl:sax(Html, Options) of
         {ok, S, _Warnings} ->
             {ok, S};
         _ ->

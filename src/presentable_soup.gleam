@@ -32,12 +32,15 @@ type Next(state) {
   Continue(state)
 }
 
+/// A HTML element, queried from a HTML document.
 pub type Element {
+  /// A HTML element
   Element(
     tag: String,
     attributes: List(#(String, String)),
     children: List(Element),
   )
+  /// Some text
   Text(String)
 }
 
@@ -272,17 +275,22 @@ fn collect_tree(stack: List(Element), event: SaxEvent) -> List(Element) {
 
 // Query
 
+/// A query is used to find elements within a HTML document, similar to a CSS
+/// selector.
+///
+/// Run a query on a HTML document with the `find` and `find_all` functions. 
+///
 pub opaque type Query {
-  FindElement(List(Selector))
-  // FindChild(parent: Selector, child: Query)
-  FindDescendant(parent: Query, child: List(Selector))
+  FindElement(List(Matcher))
+  // FindChild(parent: Matcher, child: Query)
+  FindDescendant(parent: Query, child: List(Matcher))
 }
 
-/// A `Selector` describes how to match a specific element in an `Element` tree.
+/// A `Matcher` describes how to match a specific element in an `Element` tree.
 /// It might be the element's tag name, a class name, an attribute, or some
 /// combination of these.
 ///
-pub opaque type Selector {
+pub opaque type Matcher {
   HasType(namespace: Namespace, tag: String)
   HasAttribute(name: String, value: String)
   HasClass(name: String)
@@ -300,77 +308,79 @@ pub opaque type Selector {
   // // Contains(content: String)
 }
 
-/// Find any elements in a view that match the given [`Selector`](#Selector).
+/// Find any elements in a view that match the given [`Matcher`](#Matcher).
 ///
-pub fn element(matching selector: List(Selector)) -> Query {
-  FindElement(selector)
+pub fn element(matching matcher: List(Matcher)) -> Query {
+  FindElement(matcher)
 }
 
 /// Given a `Query` that finds an element, find any of that element's _descendants_
-/// that match the given [`Selector`](#Selector). This will walk the entire tree
+/// that match the given [`Matcher`](#Matcher). This will walk the entire tree
 /// from the matching parent.
 ///
-pub fn descendant(of parent: Query, matching selector: List(Selector)) -> Query {
-  FindDescendant(parent, selector)
+pub fn descendant(of parent: Query, matching matcher: List(Matcher)) -> Query {
+  FindDescendant(parent, matcher)
 }
 
-/// Select elements based on their tag name, like `"div"`, `"span"`, or `"a"`.
-/// To select elements with an XML namespace - such as SVG elements - use the
-/// [`namespaced`](#namespaced) selector instead.
+/// Matches elements based on their tag name, like `"div"`, `"span"`, or `"a"`.
 ///
-pub fn tag(value: String) -> Selector {
+pub fn tag(value: String) -> Matcher {
   HasType(namespace: Html, tag: value)
 }
 
-pub fn svg(value: String) -> Selector {
+/// Matches SVG elements based on their tag name.
+///
+pub fn svg(value: String) -> Matcher {
   HasType(namespace: Svg, tag: value)
 }
 
-pub fn math_ml(value: String) -> Selector {
+/// Matches MathML elements based on their tag name.
+///
+pub fn math_ml(value: String) -> Matcher {
   HasType(namespace: MathMl, tag: value)
 }
 
-/// Select elements that have the specified attribute with the given value. If
-/// the value is left blank, this selector will match any element that has the
+/// Matches elements that have the specified attribute with the given value. If
+/// the value is left blank, this matcher will match any element that has the
 /// attribute, _regardless of its value_.
 ///
-pub fn attribute(name: String, value: String) -> Selector {
+pub fn attribute(name: String, value: String) -> Matcher {
   HasAttribute(name:, value:)
 }
 
-/// Select elements that include the given space-separated class name(s).
+/// Matches elements that include the given space-separated class name(s).
 ///
 /// If you need to match the class attribute exactly, you can use the [`attribute`](#attribute)
-/// selector instead.
+/// matcher instead.
 ///
-pub fn class(name: String) -> Selector {
+pub fn class(name: String) -> Matcher {
   HasClass(name)
 }
 
-/// Select an element based on its `id` attribute. Well-formed HTML means that
+/// Matches an element based on its `id` attribute. Well-formed HTML means that
 /// only one element should have a given id.
 ///
-pub fn id(name: String) -> Selector {
+pub fn id(name: String) -> Matcher {
   HasAttribute(name: "id", value: name)
 }
 
-/// Select elements that have the given `data-*` attribute.
+/// Matches elements that have the given `data-*` attribute.
 ///
-pub fn data(name: String, value: String) -> Selector {
+pub fn data(name: String, value: String) -> Matcher {
   HasAttribute(name: "data-" <> name, value: value)
 }
 
 /// It is a common convention to use the `data-test-id` attribute to mark elements
-/// for easy selection in tests. This function is a shorthand for writing
+/// for easy querying in tests. This function is a shorthand for writing
 /// `query.data("test-id", value)`
 ///
-pub fn test_id(value: String) -> Selector {
+pub fn test_id(value: String) -> Matcher {
   data("test-id", value)
 }
 
-/// Select elements that have the given `aria-*` attribute.
+/// Match elements that have the given `aria-*` attribute.
 ///
-pub fn aria(name: String, value: String) -> Selector {
+pub fn aria(name: String, value: String) -> Matcher {
   HasAttribute(name: "aria-" <> name, value: value)
 }
 
@@ -378,18 +388,15 @@ type Finder {
   Finder(
     found: List(Element),
     current: List(Element),
-    query: List(List(Selector)),
-    past: List(Option(List(Selector))),
+    query: List(List(Matcher)),
+    past: List(Option(List(Matcher))),
   )
 }
 
-fn query_to_list(
-  query: Query,
-  out: List(List(Selector)),
-) -> List(List(Selector)) {
+fn query_to_list(query: Query, out: List(List(Matcher))) -> List(List(Matcher)) {
   case query {
     FindDescendant(parent:, child:) -> query_to_list(parent, [child, ..out])
-    FindElement(selector) -> [selector, ..out]
+    FindElement(matcher) -> [matcher, ..out]
   }
 }
 
@@ -441,12 +448,12 @@ fn find_elements(state: Finder, event: SaxEvent) -> Finder {
           Finder(..state, current:, past:)
         }
 
-        [selector] ->
+        [matcher] ->
           // We have found a new element that itself matches
-          case selector_matches(selector, namespace, tag, attributes) {
+          case does_match(matcher, namespace, tag, attributes) {
             True -> {
               let current = collect_tree(state.current, event)
-              let past = [Some(selector), ..state.past]
+              let past = [Some(matcher), ..state.past]
               Finder(..state, query: [], past:, current:)
             }
             False -> {
@@ -455,12 +462,12 @@ fn find_elements(state: Finder, event: SaxEvent) -> Finder {
             }
           }
 
-        [selector, ..query] ->
+        [matcher, ..query] ->
           // We have found a new element that itself matches this first part
           // of the query, but there is yet more to come.
-          case selector_matches(selector, namespace, tag, attributes) {
+          case does_match(matcher, namespace, tag, attributes) {
             True -> {
-              let past = [Some(selector), ..state.past]
+              let past = [Some(matcher), ..state.past]
               Finder(..state, query: query, past:)
             }
             False -> {
@@ -484,9 +491,9 @@ fn find_elements(state: Finder, event: SaxEvent) -> Finder {
         }
         // We have reached the end of the element that matched the query,
         // move it to "found" now that we have collected it and its descendants.
-        [Some(selector), ..past] -> {
+        [Some(matcher), ..past] -> {
           let found = list.append(current, state.found)
-          let query = [selector, ..state.query]
+          let query = [matcher, ..state.query]
           Finder(current: [], found:, past:, query:)
         }
         [] -> panic as "empty past for end element should not be possible"
@@ -495,14 +502,14 @@ fn find_elements(state: Finder, event: SaxEvent) -> Finder {
   }
 }
 
-fn selector_matches(
-  selector: List(Selector),
+fn does_match(
+  matcher: List(Matcher),
   namespace: Namespace,
   tag: String,
   attributes: List(#(String, String)),
 ) -> Bool {
-  list.all(selector, fn(selector) {
-    case selector {
+  list.all(matcher, fn(matcher) {
+    case matcher {
       HasType(namespace: n, tag: t) -> tag == t && namespace == n
       HasAttribute(name:, value:) -> has_attribute(name, value, attributes)
       HasClass(name:) -> {

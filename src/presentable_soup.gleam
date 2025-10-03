@@ -1,15 +1,29 @@
 import gleam/list
-import gleam/option.{type Option, None, Some}
-import gleam/result
 import gleam/string
 import houdini
 
-@external(erlang, "presentable_soup_ffi", "sax")
-fn sax(
-  a: String,
-  b: state,
-  c: fn(state, SaxEvent) -> Next(state),
-) -> Result(state, Nil)
+// --- TESTING ----------------------------------
+
+pub fn main() {
+  let _ = get_one([class("wibble")], get_text())
+
+  let _ =
+    map2(get_tag(), get_text(), fn(tag, text) {
+      "element " <> tag <> ": " <> string.join(text, " ")
+    })
+}
+
+// --- IMPLEMENTATION ---------------------------
+
+//
+// This code came to me in a dream.
+//
+
+pub type Namespace {
+  Html
+  Svg
+  MathMl
+}
 
 type SaxEvent {
   StartElement(
@@ -19,29 +33,19 @@ type SaxEvent {
   )
   EndElement(namespace: String, tag: String)
   Characters(String)
+  End
 }
 
-type Namespace {
-  Html
-  Svg
-  MathMl
-}
-
-type Next(state) {
-  Stop(state)
-  Continue(state)
-}
-
-/// A HTML element, queried from a HTML document.
-pub type Element {
+/// A representation of a HTML document or fragment.
+pub type ElementTree {
   /// A HTML element
-  Element(
+  ElementNode(
     tag: String,
     attributes: List(#(String, String)),
-    children: List(Element),
+    children: List(ElementTree),
   )
   /// Some text
-  Text(String)
+  TextNode(String)
 }
 
 /// Convert elements into a pretty-printed HTML string.
@@ -56,15 +60,15 @@ pub type Element {
 ///   == "<h1>Hello, Joe! &lt;3</h1>"
 /// ```
 ///
-pub fn elements_to_string(html: List(Element)) -> String {
+pub fn elements_to_string(html: List(ElementTree)) -> String {
   html
   |> list.map(readable("", _, 0))
   |> string.join("\n\n")
 }
 
-fn readable(out: String, html: Element, level: Int) -> String {
+fn readable(out: String, html: ElementTree, level: Int) -> String {
   case html {
-    Text(t) -> {
+    TextNode(t) -> {
       let t = case starts_with_whitespace(t), ends_with_whitespace(t) {
         False, False -> t
         True, True -> string.trim(t)
@@ -75,33 +79,37 @@ fn readable(out: String, html: Element, level: Int) -> String {
     }
 
     // Void elements, these must have no children
-    Element(tag: "area" as tag, attributes:, ..)
-    | Element(tag: "base" as tag, attributes:, ..)
-    | Element(tag: "br" as tag, attributes:, ..)
-    | Element(tag: "col" as tag, attributes:, ..)
-    | Element(tag: "embed" as tag, attributes:, ..)
-    | Element(tag: "hr" as tag, attributes:, ..)
-    | Element(tag: "img" as tag, attributes:, ..)
-    | Element(tag: "input" as tag, attributes:, ..)
-    | Element(tag: "link" as tag, attributes:, ..)
-    | Element(tag: "meta" as tag, attributes:, ..)
-    | Element(tag: "source" as tag, attributes:, ..)
-    | Element(tag: "track" as tag, attributes:, ..)
-    | Element(tag: "wbr" as tag, attributes:, ..) -> {
+    ElementNode(tag: "area" as tag, attributes:, ..)
+    | ElementNode(tag: "base" as tag, attributes:, ..)
+    | ElementNode(tag: "br" as tag, attributes:, ..)
+    | ElementNode(tag: "col" as tag, attributes:, ..)
+    | ElementNode(tag: "embed" as tag, attributes:, ..)
+    | ElementNode(tag: "hr" as tag, attributes:, ..)
+    | ElementNode(tag: "img" as tag, attributes:, ..)
+    | ElementNode(tag: "input" as tag, attributes:, ..)
+    | ElementNode(tag: "link" as tag, attributes:, ..)
+    | ElementNode(tag: "meta" as tag, attributes:, ..)
+    | ElementNode(tag: "source" as tag, attributes:, ..)
+    | ElementNode(tag: "track" as tag, attributes:, ..)
+    | ElementNode(tag: "wbr" as tag, attributes:, ..) -> {
       readable_open(out, tag, attributes)
     }
 
     // Inner whitespace preserving elements, these must render their text
     // children as-is
-    Element(tag: "pre" as tag, attributes:, children: [Text(text)])
-    | Element(tag: "textarea" as tag, attributes:, children: [Text(text)])
-    | Element(tag: "script" as tag, attributes:, children: [Text(text)])
-    | Element(tag: "style" as tag, attributes:, children: [Text(text)]) -> {
+    ElementNode(tag: "pre" as tag, attributes:, children: [TextNode(text)])
+    | ElementNode(
+        tag: "textarea" as tag,
+        attributes:,
+        children: [TextNode(text)],
+      )
+    | ElementNode(tag: "script" as tag, attributes:, children: [TextNode(text)])
+    | ElementNode(tag: "style" as tag, attributes:, children: [TextNode(text)]) -> {
       let out = readable_open(out, tag, attributes)
       out <> text <> "</" <> tag <> ">"
     }
 
-    Element(tag:, attributes:, children:) -> {
+    ElementNode(tag:, attributes:, children:) -> {
       let out = readable_open(out, tag, attributes)
       let out = readable_children(out, level + 1, PermitSpace, children)
       out <> "</" <> tag <> ">"
@@ -109,17 +117,69 @@ fn readable(out: String, html: Element, level: Int) -> String {
   }
 }
 
+fn readable_open(
+  out: String,
+  tag: String,
+  attributes: List(#(String, String)),
+) -> String {
+  let out = out <> "<" <> tag
+  let out =
+    list.fold(attributes, out, fn(out, attribute) {
+      out <> " " <> attribute.0 <> "=\"" <> attribute.1 <> "\""
+    })
+  out <> ">"
+}
+
+type Space {
+  NoSpace
+  PermitSpace
+  ForceSpace
+}
+
+fn space_after(node: ElementTree) -> Space {
+  case node {
+    TextNode(t) ->
+      case ends_with_whitespace(t) {
+        True -> ForceSpace
+        False -> NoSpace
+      }
+    ElementNode(..) -> PermitSpace
+  }
+}
+
+fn ends_with_whitespace(t: String) {
+  string.ends_with(t, " ")
+  || string.ends_with(t, "\t")
+  || string.ends_with(t, "\n")
+  || string.ends_with(t, "\r\n")
+}
+
+fn starts_with_whitespace(t: String) -> Bool {
+  case t {
+    " " <> _ | "\n" <> _ | "\t" <> _ | "\r\n" <> _ -> True
+    _ -> False
+  }
+}
+
+fn space_before(previous: Space, node: ElementTree) -> Bool {
+  case node {
+    ElementNode(..) -> previous != NoSpace
+    TextNode(_) if previous == ForceSpace -> True
+    TextNode(t) -> starts_with_whitespace(t)
+  }
+}
+
 fn readable_children(
   out: String,
   level: Int,
   previous: Space,
-  nodes: List(Element),
+  nodes: List(ElementTree),
 ) -> String {
   case nodes {
     [] -> out
 
     // Final node
-    [Text(t) as node] -> {
+    [TextNode(t) as node] -> {
       case string.trim(t) {
         "" -> out <> "\n" <> string.repeat("  ", level - 1)
         _ -> {
@@ -146,7 +206,7 @@ fn readable_children(
     }
 
     // A node with more to follow
-    [Text(t) as node, ..nodes] -> {
+    [TextNode(t) as node, ..nodes] -> {
       case string.trim(t) {
         "" -> readable_children(out, level, ForceSpace, nodes)
         _ -> {
@@ -172,7 +232,7 @@ fn before_child(
   out: String,
   previous: Space,
   level: Int,
-  node: Element,
+  node: ElementTree,
 ) -> String {
   case space_before(previous, node) {
     False -> out
@@ -180,116 +240,26 @@ fn before_child(
   }
 }
 
-type Space {
-  NoSpace
-  PermitSpace
-  ForceSpace
+pub type Error {
+  ParsingFailed
+  NoContentMatched
 }
 
-fn space_after(node: Element) -> Space {
-  case node {
-    Text(t) ->
-      case ends_with_whitespace(t) {
-        True -> ForceSpace
-        False -> NoSpace
-      }
-    Element(..) -> PermitSpace
+@external(erlang, "presentable_soup_ffi", "sax")
+fn sax(
+  a: String,
+  b: state,
+  c: fn(state, SaxEvent) -> state,
+) -> Result(state, Nil)
+
+pub fn scrape(scraper: Scraper(out), html: String) -> Result(out, Error) {
+  case sax(html, scraper, apply) {
+    Ok(Done(value)) -> Ok(value)
+    Ok(More(_)) | Ok(Fail) -> Error(NoContentMatched)
+    Error(_) -> Error(ParsingFailed)
   }
 }
 
-fn ends_with_whitespace(t: String) {
-  string.ends_with(t, " ")
-  || string.ends_with(t, "\t")
-  || string.ends_with(t, "\n")
-  || string.ends_with(t, "\r\n")
-}
-
-fn starts_with_whitespace(t: String) -> Bool {
-  case t {
-    " " <> _ | "\n" <> _ | "\t" <> _ | "\r\n" <> _ -> True
-    _ -> False
-  }
-}
-
-fn space_before(previous: Space, node: Element) -> Bool {
-  case node {
-    Element(..) -> previous != NoSpace
-    Text(_) if previous == ForceSpace -> True
-    Text(t) -> starts_with_whitespace(t)
-  }
-}
-
-fn readable_open(
-  out: String,
-  tag: String,
-  attributes: List(#(String, String)),
-) -> String {
-  let out = out <> "<" <> tag
-  let out =
-    list.fold(attributes, out, fn(out, attribute) {
-      out <> " " <> attribute.0 <> "=\"" <> attribute.1 <> "\""
-    })
-  out <> ">"
-}
-
-fn collect_tree(stack: List(Element), event: SaxEvent) -> List(Element) {
-  case event {
-    StartElement(tag:, attributes:, ..) -> {
-      let element = Element(tag:, attributes:, children: [])
-      [element, ..stack]
-    }
-
-    EndElement(..) -> {
-      case stack {
-        [
-          Element(tag:, attributes:, children:),
-          Element(tag: p_tag, attributes: p_attributes, children: siblings),
-          ..stack
-        ] -> {
-          let element = Element(tag, attributes, list.reverse(children))
-          let parent = Element(p_tag, p_attributes, [element, ..siblings])
-          [parent, ..stack]
-        }
-
-        [Element(tag:, attributes:, children:), ..stack] -> {
-          let element = Element(tag, attributes, list.reverse(children))
-          [element, ..stack]
-        }
-
-        _ -> panic as "EndElement event without StartElement event"
-      }
-    }
-
-    Characters("") -> stack
-
-    Characters(text) ->
-      case stack {
-        [Element(tag:, attributes:, children:), ..stack] -> {
-          let element = Element(tag, attributes, [Text(text), ..children])
-          [element, ..stack]
-        }
-        _ -> panic as "EndElement event without StartElement event"
-      }
-  }
-}
-
-// Query
-
-/// A query is used to find elements within a HTML document, similar to a CSS
-/// selector.
-///
-/// Run a query on a HTML document with the `find` and `find_all` functions. 
-///
-pub opaque type Query {
-  FindElement(List(Matcher))
-  // FindChild(parent: Matcher, child: Query)
-  FindDescendant(parent: Query, child: List(Matcher))
-}
-
-/// A `Matcher` describes how to match a specific element in an `Element` tree.
-/// It might be the element's tag name, a class name, an attribute, or some
-/// combination of these.
-///
 pub opaque type Matcher {
   HasType(namespace: Namespace, tag: String)
   HasAttribute(name: String, value: String)
@@ -308,18 +278,79 @@ pub opaque type Matcher {
   // // Contains(content: String)
 }
 
-/// Find any elements in a view that match the given [`Matcher`](#Matcher).
-///
-pub fn element(matching matcher: List(Matcher)) -> Query {
-  FindElement(matcher)
+pub fn get_one(
+  matching matchers: List(Matcher),
+  scrape scraper: Scraper(t),
+) -> Scraper(t) {
+  More(fn(event) {
+    case event {
+      StartElement(n, t, a) ->
+        case does_match(matchers, n, t, a) {
+          True -> apply(take_one(0, scraper), event)
+          False -> get_one(matchers, scraper)
+        }
+      EndElement(..) | Characters(_) -> get_one(matchers, scraper)
+      End -> Fail
+    }
+  })
 }
 
-/// Given a `Query` that finds an element, find any of that element's _descendants_
-/// that match the given [`Matcher`](#Matcher). This will walk the entire tree
-/// from the matching parent.
-///
-pub fn descendant(of parent: Query, matching matcher: List(Matcher)) -> Query {
-  FindDescendant(parent, matcher)
+fn take_one(depth: Int, scraper: Scraper(t)) -> Scraper(t) {
+  More(fn(event) {
+    case event {
+      StartElement(..) -> take_one(depth + 1, apply(scraper, event))
+      EndElement(..) if depth <= 1 -> apply(scraper, End)
+      EndElement(..) -> take_one(depth - 1, apply(scraper, event))
+      Characters(..) -> take_one(depth, apply(scraper, event))
+      End -> apply(scraper, End)
+    }
+  })
+}
+
+fn apply(scraper: Scraper(t), event: SaxEvent) -> Scraper(t) {
+  case scraper {
+    More(f) -> f(event)
+    Done(_) | Fail -> scraper
+  }
+}
+
+fn does_match(
+  matcher: List(Matcher),
+  namespace: Namespace,
+  tag: String,
+  attributes: List(#(String, String)),
+) -> Bool {
+  list.all(matcher, fn(matcher) {
+    case matcher {
+      HasType(namespace: n, tag: t) -> tag == t && namespace == n
+      HasAttribute(name:, value:) -> has_attribute(name, value, attributes)
+      HasClass(name:) -> {
+        let desired =
+          name |> string.split(" ") |> list.filter(fn(n) { n != "" })
+        list.any(attributes, fn(attribute) {
+          list.all(desired, fn(name) {
+            attribute.0 == "class"
+            && {
+              attribute.1 == name
+              || string.starts_with(attribute.1, name <> " ")
+              || string.ends_with(attribute.1, " " <> name)
+              || string.contains(attribute.1, " " <> name <> " ")
+            }
+          })
+        })
+      }
+    }
+  })
+}
+
+fn has_attribute(
+  name: String,
+  value: String,
+  attributes: List(#(String, String)),
+) -> Bool {
+  list.any(attributes, fn(attr) {
+    name == attr.0 && { value == "" || value == attr.1 }
+  })
 }
 
 /// Matches elements based on their tag name, like `"div"`, `"span"`, or `"a"`.
@@ -384,159 +415,162 @@ pub fn aria(name: String, value: String) -> Matcher {
   HasAttribute(name: "aria-" <> name, value: value)
 }
 
-type Finder {
-  Finder(
-    found: List(Element),
-    current: List(Element),
-    query: List(List(Matcher)),
-    past: List(Option(List(Matcher))),
-  )
+pub opaque type Scraper(value) {
+  More(fn(SaxEvent) -> Scraper(value))
+  Done(value)
+  Fail
 }
 
-fn query_to_list(query: Query, out: List(List(Matcher))) -> List(List(Matcher)) {
-  case query {
-    FindDescendant(parent:, child:) -> query_to_list(parent, [child, ..out])
-    FindElement(matcher) -> [matcher, ..out]
-  }
+pub fn get_tree() -> Scraper(ElementTree) {
+  tree_scraper([])
 }
 
-/// Find all elements in a view that matches the given [`Query`](#Query).
-///
-pub fn find_all(
-  in html: String,
-  matching query: Query,
-) -> Result(List(Element), Nil) {
-  let query = query_to_list(query, [])
-  let state = Finder(found: [], current: [], query:, past: [])
-  sax(html, state, fn(state, event) { Continue(find_elements(state, event)) })
-  |> result.map(fn(state) { list.reverse(state.found) })
-}
-
-/// Find the first element in a view that matches the given [`Query`](#Query).
-///
-pub fn find(in html: String, matching query: Query) -> Result(Element, Nil) {
-  let query = query_to_list(query, [])
-  let state = Finder(found: [], current: [], query:, past: [])
-  sax(html, state, fn(state, event) {
-    let state = find_elements(state, event)
-    case state.found {
-      [] -> Continue(state)
-      _ -> Stop(state)
-    }
-  })
-  |> result.try(fn(state) { list.first(state.found) })
-}
-
-fn find_elements(state: Finder, event: SaxEvent) -> Finder {
-  case event {
-    Characters(_) -> {
-      case state.query {
-        [] -> {
-          let current = collect_tree(state.current, event)
-          Finder(..state, current:)
+fn tree_scraper(stack: List(ElementTree)) -> Scraper(ElementTree) {
+  More(fn(event) {
+    case event {
+      End ->
+        case stack {
+          [] -> Fail
+          [TextNode(_) as element] -> Done(element)
+          [ElementNode(tag, attributes, children)] ->
+            Done(ElementNode(tag, attributes, list.reverse(children)))
+          _ -> panic as "Too many elements, failed"
         }
-        _ -> state
+
+      StartElement(tag:, attributes:, ..) -> {
+        let element = ElementNode(tag:, attributes:, children: [])
+        tree_scraper([element, ..stack])
       }
-    }
 
-    StartElement(namespace:, tag:, attributes:) -> {
-      case state.query {
-        // We have found a new element that is a descendent of one that matched
-        [] -> {
-          let current = collect_tree(state.current, event)
-          let past = [None, ..state.past]
-          Finder(..state, current:, past:)
-        }
-
-        [matcher] ->
-          // We have found a new element that itself matches
-          case does_match(matcher, namespace, tag, attributes) {
-            True -> {
-              let current = collect_tree(state.current, event)
-              let past = [Some(matcher), ..state.past]
-              Finder(..state, query: [], past:, current:)
-            }
-            False -> {
-              let past = [None, ..state.past]
-              Finder(..state, past:)
-            }
+      EndElement(..) -> {
+        case stack {
+          [
+            ElementNode(tag:, attributes:, children:),
+            ElementNode(
+              tag: p_tag,
+              attributes: p_attributes,
+              children: siblings,
+            ),
+            ..stack
+          ] -> {
+            let element = ElementNode(tag, attributes, list.reverse(children))
+            let parent = ElementNode(p_tag, p_attributes, [element, ..siblings])
+            tree_scraper([parent, ..stack])
           }
 
-        [matcher, ..query] ->
-          // We have found a new element that itself matches this first part
-          // of the query, but there is yet more to come.
-          case does_match(matcher, namespace, tag, attributes) {
-            True -> {
-              let past = [Some(matcher), ..state.past]
-              Finder(..state, query: query, past:)
-            }
-            False -> {
-              let past = [None, ..state.past]
-              Finder(..state, past:)
-            }
+          [ElementNode(tag:, attributes:, children:), ..stack] -> {
+            let element = ElementNode(tag, attributes, list.reverse(children))
+            tree_scraper([element, ..stack])
           }
-      }
-    }
 
-    EndElement(..) -> {
-      let current = case state.query {
-        [] -> collect_tree(state.current, event)
-        _ -> state.current
-      }
-      case state.past {
-        // We are still inside the element that matched the query, continue
-        // collecting elements.
-        [None, ..past] -> {
-          Finder(..state, current:, past:)
+          _ -> panic as "EndElement event without StartElement event"
         }
-        // We have reached the end of the element that matched the query,
-        // move it to "found" now that we have collected it and its descendants.
-        [Some(matcher), ..past] -> {
-          let found = list.append(current, state.found)
-          let query = [matcher, ..state.query]
-          Finder(current: [], found:, past:, query:)
-        }
-        [] -> panic as "empty past for end element should not be possible"
       }
-    }
-  }
-}
 
-fn does_match(
-  matcher: List(Matcher),
-  namespace: Namespace,
-  tag: String,
-  attributes: List(#(String, String)),
-) -> Bool {
-  list.all(matcher, fn(matcher) {
-    case matcher {
-      HasType(namespace: n, tag: t) -> tag == t && namespace == n
-      HasAttribute(name:, value:) -> has_attribute(name, value, attributes)
-      HasClass(name:) -> {
-        let desired =
-          name |> string.split(" ") |> list.filter(fn(n) { n != "" })
-        list.any(attributes, fn(attribute) {
-          list.all(desired, fn(name) {
-            attribute.0 == "class"
-            && {
-              attribute.1 == name
-              || string.starts_with(attribute.1, name <> " ")
-              || string.ends_with(attribute.1, " " <> name)
-              || string.contains(attribute.1, " " <> name <> " ")
-            }
-          })
-        })
-      }
+      Characters("") -> tree_scraper(stack)
+
+      Characters(text) ->
+        case stack {
+          [ElementNode(tag:, attributes:, children:), ..stack] -> {
+            let element =
+              ElementNode(tag, attributes, [TextNode(text), ..children])
+            tree_scraper([element, ..stack])
+          }
+          _ -> panic as "Characters event without StartElement event"
+        }
     }
   })
 }
 
-fn has_attribute(
-  name: String,
-  value: String,
-  attributes: List(#(String, String)),
-) -> Bool {
-  list.any(attributes, fn(attr) {
-    name == attr.0 && { value == "" || value == attr.1 }
+pub fn get_text() -> Scraper(List(String)) {
+  text_scraper([])
+}
+
+fn text_scraper(acc: List(String)) -> Scraper(List(String)) {
+  More(fn(event) {
+    case event {
+      Characters(string) -> text_scraper([string, ..acc])
+      StartElement(..) | EndElement(..) -> text_scraper(acc)
+      End -> Done(list.reverse(acc))
+    }
   })
+}
+
+pub fn get_tag() -> Scraper(String) {
+  More(fn(event) {
+    case event {
+      End -> Fail
+      EndElement(..) | Characters(_) -> get_tag()
+      StartElement(tag:, ..) -> Done(tag)
+    }
+  })
+}
+
+pub fn get_namespace() -> Scraper(Namespace) {
+  More(fn(event) {
+    case event {
+      End -> Fail
+      EndElement(..) | Characters(_) -> get_namespace()
+      StartElement(namespace:, ..) -> Done(namespace)
+    }
+  })
+}
+
+pub fn get_attributes(
+  extract: fn(List(#(String, String))) -> value,
+) -> Scraper(value) {
+  More(fn(event) {
+    case event {
+      End -> Fail
+      EndElement(..) | Characters(_) -> get_attributes(extract)
+      StartElement(attributes:, ..) -> Done(extract(attributes))
+    }
+  })
+}
+
+pub fn map(scraper: Scraper(a), transform: fn(a) -> b) -> Scraper(b) {
+  More(fn(event) {
+    case scraper {
+      More(scrape) -> map(scrape(event), transform)
+      Fail -> Fail
+      Done(scraped) -> Done(transform(scraped))
+    }
+  })
+}
+
+pub fn map2(
+  scraper1: Scraper(t1),
+  scraper2: Scraper(t2),
+  transform: fn(t1, t2) -> out,
+) -> Scraper(out) {
+  More(fn(event) {
+    case scraper1, scraper2 {
+      Fail, _ | _, Fail -> Fail
+      More(f1), More(f2) -> map2(f1(event), f2(event), transform)
+      More(f1), Done(_) -> map2(f1(event), scraper2, transform)
+      Done(_), More(f2) -> map2(scraper1, f2(event), transform)
+      Done(v1), Done(v2) -> Done(transform(v1, v2))
+    }
+  })
+}
+
+pub fn map3(
+  scraper0: Scraper(t0),
+  scraper1: Scraper(t1),
+  scraper2: Scraper(t2),
+  transform: fn(t0, t1, t2) -> out,
+) -> Scraper(out) {
+  map2(scraper0, scraper1, fn(v0, v1) { #(v0, v1) })
+  |> map2(scraper2, fn(v, v2) { transform(v.0, v.1, v2) })
+}
+
+pub fn map4(
+  scraper0: Scraper(t0),
+  scraper1: Scraper(t1),
+  scraper2: Scraper(t2),
+  scraper3: Scraper(t3),
+  transform: fn(t0, t1, t2, t3) -> out,
+) -> Scraper(out) {
+  map3(scraper0, scraper1, scraper2, fn(v0, v1, v2) { #(v0, v1, v2) })
+  |> map2(scraper3, fn(v, v3) { transform(v.0, v.1, v.2, v3) })
 }

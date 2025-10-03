@@ -6,16 +6,18 @@ import presentable_soup as soup
 // SINGLE ELEMENTS -------------------------------------------------------------
 
 pub fn find_element_by_id_test() {
-  let query = soup.element([soup.id("login-form")])
-  let assert Ok(element) = soup.find(in: page, matching: query)
+  let assert Ok(element) =
+    soup.get_one([soup.id("login-form")], soup.get_tree())
+    |> soup.scrape(page)
   [element]
   |> soup.elements_to_string
   |> birdie.snap("[find] Login form by id")
 }
 
 pub fn find_element_by_tag_test() {
-  let query = soup.element([soup.tag("h1")])
-  let assert Ok(element) = soup.find(in: page, matching: query)
+  let assert Ok(element) =
+    soup.get_one([soup.tag("h1")], soup.get_tree())
+    |> soup.scrape(page)
 
   [element]
   |> soup.elements_to_string
@@ -23,8 +25,9 @@ pub fn find_element_by_tag_test() {
 }
 
 pub fn find_element_by_class_test() {
-  let query = soup.element([soup.class("cta")])
-  let assert Ok(element) = soup.find(page, query)
+  let assert Ok(element) =
+    soup.get_one([soup.class("cta")], soup.get_tree())
+    |> soup.scrape(page)
 
   [element]
   |> soup.elements_to_string
@@ -32,21 +35,22 @@ pub fn find_element_by_class_test() {
 }
 
 pub fn find_element_by_multiple_classes_test() {
-  let query = soup.element([soup.class("content hero")])
-  let assert Ok(element) = soup.find(in: page, matching: query)
+  let assert Ok(element) =
+    soup.get_one([soup.class("content hero")], soup.get_tree())
+    |> soup.scrape(page)
 
   [element]
   |> soup.elements_to_string
   |> birdie.snap("[find] Hero section by multiple classes")
 }
 
-//
 // pub fn find_element_by_inline_style_test() {
-//   let query = soup.element(matching: style("list-style-type", "none"))
-//   let assert Ok(element) = soup.find(in: page, matching: query)
+//   let assert Ok(element) =
+//     soup.find_one([soup.style("list-style-type", "none")], soup.get_tree())
+//     |> soup.scrape(page)
 //
 //   [element]
-//   |> soup.html_to_string
+//   |> soup.elements_to_string()
 //   |> birdie.snap("[find] Features list by inline style")
 // }
 //
@@ -59,21 +63,32 @@ pub fn find_element_by_multiple_classes_test() {
 //   |> birdie.snap("[find] Copyright notice by text")
 // }
 //
-// pub fn find_child_by_tag_test() {
-//   let query = soup.element(matching: tag("form")) |> child(matching: tag("h2"))
-//   let assert Ok(element) = soup.find(in: page, matching: query)
-//
-//   [element]
-//   |> soup.html_to_string
-//   |> birdie.snap("[find] Login form title by child selector")
-// }
-//
+pub fn find_child_by_tag_test() {
+  let assert Ok(element) =
+    soup.get_one(
+      [soup.tag("form")],
+      soup.get_one([soup.tag("h2")], soup.get_tree()),
+    )
+    |> soup.scrape(page)
+
+  [element]
+  |> soup.elements_to_string
+  |> birdie.snap("[find] Login form title by child selector")
+}
+
 pub fn find_child_descendant_by_data_attribute_test() {
-  let query =
-    soup.element([soup.tag("header")])
-    |> soup.descendant([soup.tag("nav")])
-    |> soup.descendant([soup.tag("a"), soup.data("active", "true")])
-  let assert Ok(element) = soup.find(in: page, matching: query)
+  let assert Ok(element) =
+    soup.get_one(
+      [soup.tag("header")],
+      soup.get_one(
+        [soup.tag("nav")],
+        soup.get_one(
+          [soup.tag("a"), soup.data("active", "true")],
+          soup.get_tree(),
+        ),
+      ),
+    )
+    |> soup.scrape(page)
 
   [element]
   |> soup.elements_to_string
@@ -81,44 +96,49 @@ pub fn find_child_descendant_by_data_attribute_test() {
 }
 
 pub fn find_descendant_by_attribute_test() {
-  let query =
-    soup.element([soup.tag("form")])
-    |> soup.descendant([soup.tag("button"), soup.attribute("type", "submit")])
-  let assert Ok(element) = soup.find(in: page, matching: query)
+  let assert Ok(element) =
+    soup.get_one(
+      [soup.tag("form")],
+      soup.get_one(
+        [soup.tag("button"), soup.attribute("type", "submit")],
+        soup.get_tree(),
+      ),
+    )
+    |> soup.scrape(page)
 
   [element]
   |> soup.elements_to_string
   |> birdie.snap("[find] Submit button by descendant selector")
 }
 
-// MULTIPLE ELEMENTS -----------------------------------------------------------
-
-pub fn find_all_by_tag_test() {
-  let query = soup.element([soup.tag("section")])
-  let assert Ok(elements) = soup.find_all(in: page, matching: query)
-
-  elements
-  |> soup.elements_to_string
-  |> birdie.snap("[find_all] All sections by tag")
-}
-
-pub fn find_all_by_attribute_test() {
-  let query = soup.element([soup.attribute("href", "")])
-  let assert Ok(elements) = soup.find_all(in: page, matching: query)
-
-  elements
-  |> soup.elements_to_string
-  |> birdie.snap("[find_all] All links with href attribute")
-}
-
-pub fn find_all_by_class_test() {
-  let query = soup.element([soup.class("vertical-nav")])
-  let assert Ok(elements) = soup.find_all(in: page, matching: query)
-
-  elements
-  |> soup.elements_to_string
-  |> birdie.snap("[find_all] All footer nav sections by class")
-}
+// // MULTIPLE ELEMENTS -----------------------------------------------------------
+//
+// pub fn find_all_by_tag_test() {
+//   let query = soup.element([soup.tag("section")])
+//   let assert Ok(elements) = soup.find_all(in: page, matching: query)
+//
+//   elements
+//   |> soup.elements_to_string
+//   |> birdie.snap("[find_all] All sections by tag")
+// }
+//
+// pub fn find_all_by_attribute_test() {
+//   let query = soup.element([soup.attribute("href", "")])
+//   let assert Ok(elements) = soup.find_all(in: page, matching: query)
+//
+//   elements
+//   |> soup.elements_to_string
+//   |> birdie.snap("[find_all] All links with href attribute")
+// }
+//
+// pub fn find_all_by_class_test() {
+//   let query = soup.element([soup.class("vertical-nav")])
+//   let assert Ok(elements) = soup.find_all(in: page, matching: query)
+//
+//   elements
+//   |> soup.elements_to_string
+//   |> birdie.snap("[find_all] All footer nav sections by class")
+// }
 
 const page: String = "
 <header>

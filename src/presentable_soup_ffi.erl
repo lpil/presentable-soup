@@ -5,10 +5,7 @@
 sax(Html, Initial, Fun) ->
     EventFun = fun(Event, _LineNumber, State) ->
         F = fun(E) ->
-            case Fun(State, E) of
-                {continue, S} -> S;
-                {stop, S} -> erlang:throw({soup, S})
-            end
+            Fun(State, E)
         end,
         case Event of
             startDocument -> State;
@@ -47,14 +44,11 @@ sax(Html, Initial, Fun) ->
         end
     end,
     Options = [{event_fun, EventFun}, {user_state, Initial}, {preserve_ws, true}],
-    try htmerl:sax(Html, Options) of
+    case htmerl:sax(Html, Options) of
         {ok, S, _Warnings} ->
             {ok, S};
         _ ->
             {error, nil}
-    catch
-        throw:{soup, S} ->
-            {ok, S}
     end.
 
 convert_attribute({_Uri, _Prefix, AttributeName, Value}) ->

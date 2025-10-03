@@ -1,19 +1,7 @@
 import gleam/list
+import gleam/option
 import gleam/string
 import houdini
-
-// --- TESTING ----------------------------------
-
-pub fn main() {
-  let _ = get_one([class("wibble")], get_text())
-
-  let _ =
-    map2(get_tag(), get_text(), fn(tag, text) {
-      "element " <> tag <> ": " <> string.join(text, " ")
-    })
-}
-
-// --- IMPLEMENTATION ---------------------------
 
 //
 // This code came to me in a dream.
@@ -254,8 +242,14 @@ fn sax(
 
 pub fn scrape(scraper: Scraper(out), html: String) -> Result(out, Error) {
   case sax(html, scraper, apply) {
+    Ok(More(f)) -> {
+      case f(End) {
+        Done(value) -> Ok(value)
+        Fail | More(_) -> Error(NoContentMatched)
+      }
+    }
     Ok(Done(value)) -> Ok(value)
-    Ok(More(_)) | Ok(Fail) -> Error(NoContentMatched)
+    Ok(Fail) -> Error(NoContentMatched)
     Error(_) -> Error(ParsingFailed)
   }
 }
@@ -278,7 +272,7 @@ pub opaque type Matcher {
   // // Contains(content: String)
 }
 
-pub fn get_one(
+pub fn find_one(
   matching matchers: List(Matcher),
   scrape scraper: Scraper(t),
 ) -> Scraper(t) {
@@ -287,10 +281,46 @@ pub fn get_one(
       StartElement(n, t, a) ->
         case does_match(matchers, n, t, a) {
           True -> apply(take_one(0, scraper), event)
-          False -> get_one(matchers, scraper)
+          False -> find_one(matchers, scraper)
         }
-      EndElement(..) | Characters(_) -> get_one(matchers, scraper)
+      EndElement(..) | Characters(_) -> find_one(matchers, scraper)
       End -> Fail
+    }
+  })
+}
+
+pub fn find_all(
+  matching matchers: List(Matcher),
+  scrape scraper: Scraper(t),
+) -> Scraper(List(t)) {
+  find_all_scraper([], matchers, scraper)
+}
+
+fn find_all_scraper(
+  acc: List(t),
+  matchers: List(Matcher),
+  scraper: Scraper(t),
+) -> Scraper(List(t)) {
+  More(fn(event) {
+    echo #(acc, event)
+    case event {
+      StartElement(n, t, a) ->
+        case does_match(matchers, n, t, a) {
+          True -> {
+            let self = fn(next) {
+              let acc = case next {
+                option.None -> acc
+                option.Some(v) -> [v, ..acc]
+              }
+              find_all_scraper(acc, matchers, scraper)
+            }
+            take_one_then_continue(0, scraper, self)
+            |> apply(event)
+          }
+          False -> find_all_scraper(acc, matchers, scraper)
+        }
+      EndElement(..) | Characters(_) -> find_all_scraper(acc, matchers, scraper)
+      End -> Done(list.reverse(acc))
     }
   })
 }
@@ -303,6 +333,31 @@ fn take_one(depth: Int, scraper: Scraper(t)) -> Scraper(t) {
       EndElement(..) -> take_one(depth - 1, apply(scraper, event))
       Characters(..) -> take_one(depth, apply(scraper, event))
       End -> apply(scraper, End)
+    }
+  })
+}
+
+fn take_one_then_continue(
+  depth: Int,
+  scraper: Scraper(t1),
+  continuer: fn(option.Option(t1)) -> Scraper(t2),
+) -> Scraper(t2) {
+  More(fn(event) {
+    case event {
+      StartElement(..) ->
+        take_one_then_continue(depth + 1, apply(scraper, event), continuer)
+      EndElement(..) if depth > 1 -> {
+        take_one_then_continue(depth - 1, apply(scraper, event), continuer)
+      }
+      Characters(..) ->
+        take_one_then_continue(depth, apply(scraper, event), continuer)
+
+      End | EndElement(..) ->
+        case apply(scraper, End) {
+          Done(v) -> continuer(option.Some(v))
+          Fail | More(_) -> continuer(option.None)
+        }
+        |> apply(End)
     }
   })
 }

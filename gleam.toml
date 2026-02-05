@@ -1,6 +1,6 @@
 name = "presentable_soup"
-version = "1.0.0"
-description = "Querying, scraping, and parsing of HTML. Good for snapshot testing too!"
+version = "2.0.0"
+description = "Efficient querying, scraping, and parsing of HTML. Good for snapshot testing too!"
 
 licences = ["Apache-2.0"]
 repository = { type = "github", user = "lpil", repo = "presentable-soup" }

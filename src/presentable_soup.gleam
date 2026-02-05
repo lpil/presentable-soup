@@ -3,10 +3,6 @@ import gleam/option.{type Option, None, Some}
 import gleam/string
 import houdini
 
-//
-// This code came to me in a dream.
-//
-
 pub type Namespace {
   Html
   Svg
@@ -34,6 +30,68 @@ pub type ElementTree {
   )
   /// Some text
   TextNode(String)
+}
+
+/// A scraper matches elements and extracts data from them.
+pub opaque type Scraper(value) {
+  // This code came to me in a dream.
+  Scraper(next: fn(SaxEvent) -> Scraper(value), end: fn() -> Option(value))
+}
+
+/// Queries are used to scope scrapers to specific elements.
+pub opaque type Query(in, out) {
+  Query(make_scraper: fn(Scraper(in)) -> Scraper(out))
+}
+
+/// Start a query to find the first element matching the given matchers.
+///
+/// Chain with `descendant` to narrow down the search, then finish with `return`
+/// to specify what data to extract.
+///
+pub fn element(matchers: List(Matcher)) -> Query(value, value) {
+  Query(fn(scraper) { find_one(matchers, scraper) })
+}
+
+/// Start a query to find all elements matching the given matchers.
+///
+/// This is not recursive, so if you search for `div` elements it won't match
+/// any `div`s that are children of other matched `div`s.
+///
+pub fn elements(matchers: List(Matcher)) -> Query(value, List(value)) {
+  Query(fn(scraper) { find_all(matchers, scraper) })
+}
+
+/// Narrow a query to find the first descendant matching the given matchers.
+///
+pub fn descendant(
+  query: Query(in, out),
+  matchers: List(Matcher),
+) -> Query(in, out) {
+  Query(fn(scraper) { query.make_scraper(find_one(matchers, scraper)) })
+}
+
+/// Narrow a query to find all descendants matching the given matchers.
+///
+pub fn descendants(
+  query: Query(List(in), out),
+  matchers: List(Matcher),
+) -> Query(in, out) {
+  Query(fn(scraper) { query.make_scraper(find_all(matchers, scraper)) })
+}
+
+/// Finish a query by specifying what data to extract from matched elements.
+///
+pub fn return(query: Query(in, out), scraper: Scraper(in)) -> Scraper(out) {
+  query.make_scraper(scraper)
+}
+
+/// Errors that can occur when scraping HTML.
+pub type ScrapeError {
+  /// The HTML document was malformed in a way that make it unparsable.
+  ParsingFailed
+  /// The document did not have the structure the scraper expected, so it was
+  /// unable to extract the desired data.
+  ScrapingFailed
 }
 
 /// Convert elements into a pretty-printed HTML string.
@@ -228,11 +286,6 @@ fn before_child(
   }
 }
 
-pub type Error {
-  ParsingFailed
-  NoContentMatched
-}
-
 @external(erlang, "presentable_soup_ffi", "sax")
 fn sax(
   a: String,
@@ -240,12 +293,15 @@ fn sax(
   c: fn(state, SaxEvent) -> state,
 ) -> Result(state, Nil)
 
-pub fn scrape(scraper: Scraper(out), html: String) -> Result(out, Error) {
+/// Run a scraper, returning the scraped data, or an error if the scraper
+/// failed to find its data.
+///
+pub fn scrape(scraper: Scraper(out), html: String) -> Result(out, ScrapeError) {
   case sax(html, scraper, fn(scraper, event) { scraper.next(event) }) {
     Ok(scraper) ->
       case scraper.end() {
         Some(data) -> Ok(data)
-        None -> Error(NoContentMatched)
+        None -> Error(ScrapingFailed)
       }
     Error(_) -> Error(ParsingFailed)
   }
@@ -269,10 +325,7 @@ pub opaque type Matcher {
   // // Contains(content: String)
 }
 
-pub fn find_one(
-  matching matchers: List(Matcher),
-  scrape scraper: Scraper(t),
-) -> Scraper(t) {
+fn find_one(matchers: List(Matcher), scraper: Scraper(t)) -> Scraper(t) {
   Scraper(
     next: fn(event) {
       case event {
@@ -289,10 +342,12 @@ pub fn find_one(
   )
 }
 
-pub fn find_all(
-  matching matchers: List(Matcher),
-  scrape scraper: Scraper(t),
-) -> Scraper(List(t)) {
+/// Find all elements that matches the given matchers.
+///
+/// This is not recursive, so if you search for `div` elements it won't match
+/// any `div`s that are children of other `div`s.
+///
+fn find_all(matchers: List(Matcher), scraper: Scraper(t)) -> Scraper(List(t)) {
   find_all_scraper([], matchers, scraper)
 }
 
@@ -318,7 +373,8 @@ fn find_all_scraper(
             }
             False -> find_all_scraper(acc, matchers, scraper)
           }
-        EndElement(..) | Characters(_) -> find_all_scraper(acc, matchers, scraper)
+        EndElement(..) | Characters(_) ->
+          find_all_scraper(acc, matchers, scraper)
         End -> done(list.reverse(acc))
       }
     },
@@ -410,19 +466,19 @@ fn has_attribute(
 
 /// Matches elements based on their tag name, like `"div"`, `"span"`, or `"a"`.
 ///
-pub fn tag(value: String) -> Matcher {
+pub fn with_tag(value: String) -> Matcher {
   HasType(namespace: Html, tag: value)
 }
 
 /// Matches SVG elements based on their tag name.
 ///
-pub fn svg(value: String) -> Matcher {
+pub fn with_svg_tag(value: String) -> Matcher {
   HasType(namespace: Svg, tag: value)
 }
 
 /// Matches MathML elements based on their tag name.
 ///
-pub fn math_ml(value: String) -> Matcher {
+pub fn with_math_ml_tag(value: String) -> Matcher {
   HasType(namespace: MathMl, tag: value)
 }
 
@@ -430,7 +486,7 @@ pub fn math_ml(value: String) -> Matcher {
 /// the value is left blank, this matcher will match any element that has the
 /// attribute, _regardless of its value_.
 ///
-pub fn attribute(name: String, value: String) -> Matcher {
+pub fn with_attribute(name: String, value: String) -> Matcher {
   HasAttribute(name:, value:)
 }
 
@@ -439,20 +495,20 @@ pub fn attribute(name: String, value: String) -> Matcher {
 /// If you need to match the class attribute exactly, you can use the [`attribute`](#attribute)
 /// matcher instead.
 ///
-pub fn class(name: String) -> Matcher {
+pub fn with_class(name: String) -> Matcher {
   HasClass(name)
 }
 
 /// Matches an element based on its `id` attribute. Well-formed HTML means that
 /// only one element should have a given id.
 ///
-pub fn id(name: String) -> Matcher {
+pub fn with_id(name: String) -> Matcher {
   HasAttribute(name: "id", value: name)
 }
 
 /// Matches elements that have the given `data-*` attribute.
 ///
-pub fn data(name: String, value: String) -> Matcher {
+pub fn with_data(name: String, value: String) -> Matcher {
   HasAttribute(name: "data-" <> name, value: value)
 }
 
@@ -460,18 +516,14 @@ pub fn data(name: String, value: String) -> Matcher {
 /// for easy querying in tests. This function is a shorthand for writing
 /// `query.data("test-id", value)`
 ///
-pub fn test_id(value: String) -> Matcher {
-  data("test-id", value)
+pub fn with_test_id(value: String) -> Matcher {
+  with_data("test-id", value)
 }
 
 /// Match elements that have the given `aria-*` attribute.
 ///
-pub fn aria(name: String, value: String) -> Matcher {
+pub fn with_aria(name: String, value: String) -> Matcher {
   HasAttribute(name: "aria-" <> name, value: value)
-}
-
-pub opaque type Scraper(value) {
-  Scraper(next: fn(SaxEvent) -> Scraper(value), end: fn() -> Option(value))
 }
 
 fn done(value: t) -> Scraper(t) {
@@ -486,7 +538,10 @@ fn fresh(next: fn(SaxEvent) -> Scraper(t)) -> Scraper(t) {
   Scraper(next:, end: fn() { None })
 }
 
-pub fn get_tree() -> Scraper(ElementTree) {
+/// Get the element add its descendants as an `ElementTree`. This may be useful
+/// for snapshot testing when combined with `elements_to_string`.
+///
+pub fn element_tree() -> Scraper(ElementTree) {
   fresh(tree_scraper_fn([]))
 }
 
@@ -549,7 +604,9 @@ fn tree_scraper_fn(
   }
 }
 
-pub fn get_text() -> Scraper(List(String)) {
+/// Get all the text contained by the element and its descendants.
+///
+pub fn text_content() -> Scraper(List(String)) {
   fresh(text_scraper_fn([]))
 }
 
@@ -563,7 +620,9 @@ fn text_scraper_fn(acc: List(String)) -> fn(SaxEvent) -> Scraper(List(String)) {
   }
 }
 
-pub fn get_tag() -> Scraper(String) {
+/// Get the tag of the element.
+///
+pub fn tag() -> Scraper(String) {
   fresh(tag_scraper_fn())
 }
 
@@ -576,7 +635,9 @@ fn tag_scraper_fn() -> fn(SaxEvent) -> Scraper(String) {
   }
 }
 
-pub fn get_namespace() -> Scraper(Namespace) {
+/// Get the namespace of the element.
+///
+pub fn namespace() -> Scraper(Namespace) {
   fresh(namespace_scraper_fn())
 }
 
@@ -589,7 +650,9 @@ fn namespace_scraper_fn() -> fn(SaxEvent) -> Scraper(Namespace) {
   }
 }
 
-pub fn get_attributes() -> Scraper(List(#(String, String))) {
+/// Get the attributes of the element.
+///
+pub fn attributes() -> Scraper(List(#(String, String))) {
   fresh(attributes_scraper_fn())
 }
 
@@ -602,12 +665,32 @@ fn attributes_scraper_fn() -> fn(SaxEvent) -> Scraper(List(#(String, String))) {
   }
 }
 
+/// Transform the data returned by a scraper by running a function on it after
+/// it has been extracted from the HTML.
+///
 pub fn map(scraper: Scraper(a), transform: fn(a) -> b) -> Scraper(b) {
+  Scraper(next: fn(event) { map(scraper.next(event), transform) }, end: fn() {
+    case scraper.end() {
+      Some(value) -> Some(transform(value))
+      None -> None
+    }
+  })
+}
+
+/// Transform the data returned by a scraper by running a function on it after
+/// it has been extracted from the HTML.
+///
+/// If the transformer returns an error then the scraper returns nothing.
+///
+pub fn try_map(
+  scraper: Scraper(a),
+  transform: fn(a) -> Result(b, error),
+) -> Scraper(b) {
   Scraper(
-    next: fn(event) { map(scraper.next(event), transform) },
+    next: fn(event) { try_map(scraper.next(event), transform) },
     end: fn() {
       case scraper.end() {
-        Some(value) -> Some(transform(value))
+        Some(value) -> transform(value) |> option.from_result
         None -> None
       }
     },
@@ -616,41 +699,102 @@ pub fn map(scraper: Scraper(a), transform: fn(a) -> b) -> Scraper(b) {
 
 /// Take two scrapers and combine them into one. The final result from both is
 /// combined using a function to make the new final result.
-pub fn map2(
+///
+pub fn merge2(
   scraper1: Scraper(t1),
   scraper2: Scraper(t2),
   transform: fn(t1, t2) -> out,
 ) -> Scraper(out) {
   Scraper(
     next: fn(event) {
-      map2(scraper1.next(event), scraper2.next(event), transform)
+      merge2(scraper1.next(event), scraper2.next(event), transform)
     },
     end: fn() {
-      case scraper1.end(), scraper2.end() {
-        Some(value1), Some(value2) -> Some(transform(value1, value2))
-        _, _ -> None
+      case scraper1.end() {
+        Some(value1) ->
+          case scraper2.end() {
+            Some(value2) -> Some(transform(value1, value2))
+            _ -> None
+          }
+        _ -> None
       }
     },
   )
 }
 
-pub fn map3(
+/// Take three scrapers and combine them into one. The final result from each
+/// is combined using a function to make the new final result.
+///
+pub fn merge3(
   scraper0: Scraper(t0),
   scraper1: Scraper(t1),
   scraper2: Scraper(t2),
   transform: fn(t0, t1, t2) -> out,
 ) -> Scraper(out) {
-  map2(scraper0, scraper1, fn(v0, v1) { #(v0, v1) })
-  |> map2(scraper2, fn(v, v2) { transform(v.0, v.1, v2) })
+  Scraper(
+    next: fn(event) {
+      merge3(
+        scraper0.next(event),
+        scraper1.next(event),
+        scraper2.next(event),
+        transform,
+      )
+    },
+    end: fn() {
+      case scraper0.end() {
+        Some(value0) ->
+          case scraper1.end() {
+            Some(value1) ->
+              case scraper2.end() {
+                Some(value2) -> Some(transform(value0, value1, value2))
+                _ -> None
+              }
+            _ -> None
+          }
+        _ -> None
+      }
+    },
+  )
 }
 
-pub fn map4(
+/// Take four scrapers and combine them into one. The final result from each
+/// is combined using a function to make the new final result.
+///
+pub fn merge4(
   scraper0: Scraper(t0),
   scraper1: Scraper(t1),
   scraper2: Scraper(t2),
   scraper3: Scraper(t3),
   transform: fn(t0, t1, t2, t3) -> out,
 ) -> Scraper(out) {
-  map3(scraper0, scraper1, scraper2, fn(v0, v1, v2) { #(v0, v1, v2) })
-  |> map2(scraper3, fn(v, v3) { transform(v.0, v.1, v.2, v3) })
+  Scraper(
+    next: fn(event) {
+      merge4(
+        scraper0.next(event),
+        scraper1.next(event),
+        scraper2.next(event),
+        scraper3.next(event),
+        transform,
+      )
+    },
+    end: fn() {
+      case scraper0.end() {
+        Some(value0) ->
+          case scraper1.end() {
+            Some(value1) ->
+              case scraper2.end() {
+                Some(value2) ->
+                  case scraper3.end() {
+                    Some(value3) ->
+                      Some(transform(value0, value1, value2, value3))
+                    _ -> None
+                  }
+                _ -> None
+              }
+            _ -> None
+          }
+        _ -> None
+      }
+    },
+  )
 }

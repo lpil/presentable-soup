@@ -7,7 +7,8 @@ import presentable_soup as soup
 
 pub fn find_element_by_id_test() {
   let assert Ok(element) =
-    soup.find_one([soup.id("login-form")], soup.get_tree())
+    soup.element([soup.with_id("login-form")])
+    |> soup.return(soup.element_tree())
     |> soup.scrape(page)
   [element]
   |> soup.elements_to_string
@@ -16,7 +17,8 @@ pub fn find_element_by_id_test() {
 
 pub fn find_element_by_tag_test() {
   let assert Ok(element) =
-    soup.find_one([soup.tag("h1")], soup.get_tree())
+    soup.element([soup.with_tag("h1")])
+    |> soup.return(soup.element_tree())
     |> soup.scrape(page)
 
   [element]
@@ -26,7 +28,8 @@ pub fn find_element_by_tag_test() {
 
 pub fn find_element_by_class_test() {
   let assert Ok(element) =
-    soup.find_one([soup.class("cta")], soup.get_tree())
+    soup.element([soup.with_class("cta")])
+    |> soup.return(soup.element_tree())
     |> soup.scrape(page)
 
   [element]
@@ -36,7 +39,8 @@ pub fn find_element_by_class_test() {
 
 pub fn find_element_by_multiple_classes_test() {
   let assert Ok(element) =
-    soup.find_one([soup.class("content hero")], soup.get_tree())
+    soup.element([soup.with_class("content hero")])
+    |> soup.return(soup.element_tree())
     |> soup.scrape(page)
 
   [element]
@@ -46,10 +50,9 @@ pub fn find_element_by_multiple_classes_test() {
 
 pub fn find_child_by_tag_test() {
   let assert Ok(element) =
-    soup.find_one(
-      [soup.tag("form")],
-      soup.find_one([soup.tag("h2")], soup.get_tree()),
-    )
+    soup.element([soup.with_tag("form")])
+    |> soup.descendant([soup.with_tag("h2")])
+    |> soup.return(soup.element_tree())
     |> soup.scrape(page)
 
   [element]
@@ -59,16 +62,10 @@ pub fn find_child_by_tag_test() {
 
 pub fn find_child_descendant_by_data_attribute_test() {
   let assert Ok(element) =
-    soup.find_one(
-      [soup.tag("header")],
-      soup.find_one(
-        [soup.tag("nav")],
-        soup.find_one(
-          [soup.tag("a"), soup.data("active", "true")],
-          soup.get_tree(),
-        ),
-      ),
-    )
+    soup.element([soup.with_tag("header")])
+    |> soup.descendant([soup.with_tag("nav")])
+    |> soup.descendant([soup.with_tag("a"), soup.with_data("active", "true")])
+    |> soup.return(soup.element_tree())
     |> soup.scrape(page)
 
   [element]
@@ -78,13 +75,12 @@ pub fn find_child_descendant_by_data_attribute_test() {
 
 pub fn find_descendant_by_attribute_test() {
   let assert Ok(element) =
-    soup.find_one(
-      [soup.tag("form")],
-      soup.find_one(
-        [soup.tag("button"), soup.attribute("type", "submit")],
-        soup.get_tree(),
-      ),
-    )
+    soup.element([soup.with_tag("form")])
+    |> soup.descendant([
+      soup.with_tag("button"),
+      soup.with_attribute("type", "submit"),
+    ])
+    |> soup.return(soup.element_tree())
     |> soup.scrape(page)
 
   [element]
@@ -96,7 +92,8 @@ pub fn find_descendant_by_attribute_test() {
 
 pub fn find_all_by_tag_test() {
   let assert Ok(elements) =
-    soup.find_all(matching: [soup.tag("section")], scrape: soup.get_tree())
+    soup.elements([soup.with_tag("section")])
+    |> soup.return(soup.element_tree())
     |> soup.scrape(page)
 
   elements
@@ -106,7 +103,8 @@ pub fn find_all_by_tag_test() {
 
 pub fn find_all_by_attribute_test() {
   let assert Ok(elements) =
-    soup.find_all(matching: [soup.attribute("href", "")], scrape: soup.get_tree())
+    soup.elements([soup.with_attribute("href", "")])
+    |> soup.return(soup.element_tree())
     |> soup.scrape(page)
 
   elements
@@ -116,7 +114,8 @@ pub fn find_all_by_attribute_test() {
 
 pub fn find_all_by_class_test() {
   let assert Ok(elements) =
-    soup.find_all(matching: [soup.class("vertical-nav")], scrape: soup.get_tree())
+    soup.elements([soup.with_class("vertical-nav")])
+    |> soup.return(soup.element_tree())
     |> soup.scrape(page)
 
   elements

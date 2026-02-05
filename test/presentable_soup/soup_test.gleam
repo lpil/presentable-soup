@@ -80,7 +80,8 @@ pub fn scrape_0_test() {
     "
 
   let assert Ok(element) =
-    soup.find_one([soup.tag("h1")], soup.get_tree())
+    soup.element([soup.with_tag("h1")])
+    |> soup.return(soup.element_tree())
     |> soup.scrape(page)
 
   [element]
@@ -101,7 +102,8 @@ pub fn scrape_1_test() {
     "
 
   let assert Ok(element) =
-    soup.find_one([soup.tag("h1")], soup.get_tree())
+    soup.element([soup.with_tag("h1")])
+    |> soup.return(soup.element_tree())
     |> soup.scrape(page)
 
   [element]
@@ -120,7 +122,8 @@ pub fn scrape_2_test() {
     "
 
   let assert Ok(element) =
-    soup.find_all([soup.tag("p")], soup.get_tree())
+    soup.elements([soup.with_tag("p")])
+    |> soup.return(soup.element_tree())
     |> soup.scrape(page)
 
   element
@@ -143,7 +146,8 @@ pub fn scrape_3_test() {
     "
 
   let assert Ok(element) =
-    soup.find_all([soup.tag("p")], soup.get_tree())
+    soup.elements([soup.with_tag("p")])
+    |> soup.return(soup.element_tree())
     |> soup.scrape(page)
 
   element
@@ -172,10 +176,9 @@ pub fn scrape_4_test() {
     "
 
   let assert Ok(element) =
-    soup.find_all(
-      [soup.tag("p")],
-      soup.find_one([soup.tag("span")], soup.get_tree()),
-    )
+    soup.elements([soup.with_tag("p")])
+    |> soup.descendant([soup.with_tag("span")])
+    |> soup.return(soup.element_tree())
     |> soup.scrape(page)
 
   element
@@ -195,10 +198,9 @@ pub fn scrape_5_test() {
     "
 
   let assert Ok(element) =
-    soup.find_all(
-      [soup.tag("p")],
-      soup.find_all([soup.tag("span")], soup.get_tree()),
-    )
+    soup.elements([soup.with_tag("p")])
+    |> soup.descendants([soup.with_tag("span")])
+    |> soup.return(soup.element_tree())
     |> soup.map(list.flatten)
     |> soup.scrape(page)
 
@@ -216,7 +218,8 @@ pub fn get_tag_test() {
   let page = "<div><span>hello</span></div>"
 
   let assert Ok(tag) =
-    soup.find_one([soup.tag("span")], soup.get_tag())
+    soup.element([soup.with_tag("span")])
+    |> soup.return(soup.tag())
     |> soup.scrape(page)
 
   format_snap(page, "find_one span tag, get tag name", tag)
@@ -227,7 +230,8 @@ pub fn get_attributes_test() {
   let page = "<a href=\"/home\" class=\"link primary\" data-id=\"123\">Home</a>"
 
   let assert Ok(attrs) =
-    soup.find_one([soup.tag("a")], soup.get_attributes())
+    soup.element([soup.with_tag("a")])
+    |> soup.return(soup.attributes())
     |> soup.scrape(page)
 
   attrs
@@ -241,7 +245,8 @@ pub fn get_text_test() {
   let page = "<p>Hello <strong>world</strong>!</p>"
 
   let assert Ok(text) =
-    soup.find_one([soup.tag("p")], soup.get_text())
+    soup.element([soup.with_tag("p")])
+    |> soup.return(soup.text_content())
     |> soup.scrape(page)
 
   text
@@ -254,7 +259,8 @@ pub fn get_text_nested_test() {
   let page = "<div><p>First</p><p>Second</p></div>outside<div>another</div>"
 
   let assert Ok(text) =
-    soup.find_one([soup.tag("div")], soup.get_text())
+    soup.element([soup.with_tag("div")])
+    |> soup.return(soup.text_content())
     |> soup.scrape(page)
 
   text
@@ -267,7 +273,8 @@ pub fn get_namespace_html_test() {
   let page = "<div>hello</div>"
 
   let assert Ok(ns) =
-    soup.find_one([soup.tag("div")], soup.get_namespace())
+    soup.element([soup.with_tag("div")])
+    |> soup.return(soup.namespace())
     |> soup.scrape(page)
 
   case ns {
@@ -283,7 +290,8 @@ pub fn get_namespace_svg_test() {
   let page = "<svg><circle cx=\"50\" cy=\"50\" r=\"40\"></circle></svg>"
 
   let assert Ok(ns) =
-    soup.find_one([soup.svg("circle")], soup.get_namespace())
+    soup.element([soup.with_svg_tag("circle")])
+    |> soup.return(soup.namespace())
     |> soup.scrape(page)
 
   case ns {
@@ -299,11 +307,11 @@ pub fn map2_test() {
   let page = "<article><h1>Title</h1><p>Content here</p></article>"
 
   let assert Ok(result) =
-    soup.find_one(
-      [soup.tag("article")],
-      soup.map2(
-        soup.find_one([soup.tag("h1")], soup.get_text()),
-        soup.find_one([soup.tag("p")], soup.get_text()),
+    soup.element([soup.with_tag("article")])
+    |> soup.return(
+      soup.merge2(
+        soup.element([soup.with_tag("h1")]) |> soup.return(soup.text_content()),
+        soup.element([soup.with_tag("p")]) |> soup.return(soup.text_content()),
         fn(title, content) {
           "Title: "
           <> string.join(title, "")
@@ -328,12 +336,14 @@ pub fn map3_test() {
     "<div data-id=\"42\"><span class=\"name\">Alice</span><span class=\"role\">Admin</span></div>"
 
   let assert Ok(result) =
-    soup.find_one(
-      [soup.tag("div")],
-      soup.map3(
-        soup.get_attributes(),
-        soup.find_one([soup.class("name")], soup.get_text()),
-        soup.find_one([soup.class("role")], soup.get_text()),
+    soup.element([soup.with_tag("div")])
+    |> soup.return(
+      soup.merge3(
+        soup.attributes(),
+        soup.element([soup.with_class("name")])
+          |> soup.return(soup.text_content()),
+        soup.element([soup.with_class("role")])
+          |> soup.return(soup.text_content()),
         fn(attrs, name, role) {
           let id = case list.find(attrs, fn(a) { a.0 == "data-id" }) {
             Ok(#(_, v)) -> v
@@ -363,7 +373,8 @@ pub fn map_transform_test() {
   let page = "<ul><li>one</li><li>two</li><li>three</li></ul>"
 
   let assert Ok(result) =
-    soup.find_all([soup.tag("li")], soup.get_text())
+    soup.elements([soup.with_tag("li")])
+    |> soup.return(soup.text_content())
     |> soup.map(fn(items) {
       items
       |> list.map(fn(texts) { string.uppercase(string.join(texts, "")) })
@@ -374,4 +385,28 @@ pub fn map_transform_test() {
   |> string.join(", ")
   |> format_snap(page, "find_all li, get text, map to uppercase", _)
   |> birdie.snap("map transforms scraper results")
+}
+
+pub fn try_map_success_test() {
+  let page = "<span data-count=\"42\">hello</span>"
+
+  let result =
+    soup.element([soup.with_tag("span")])
+    |> soup.return(soup.attributes())
+    |> soup.try_map(fn(attrs) { list.key_find(attrs, "data-count") })
+    |> soup.scrape(page)
+
+  assert result == Ok("42")
+}
+
+pub fn try_map_failure_test() {
+  let page = "<span>hello</span>"
+
+  let result =
+    soup.element([soup.with_tag("span")])
+    |> soup.return(soup.attributes())
+    |> soup.try_map(fn(attrs) { list.key_find(attrs, "data-count") })
+    |> soup.scrape(page)
+
+  assert result == Error(soup.ScrapingFailed)
 }

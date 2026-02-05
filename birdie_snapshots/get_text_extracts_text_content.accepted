@@ -1,0 +1,14 @@
+---
+version: 1.3.2
+title: get_text extracts text content
+file: ./test/presentable_soup/soup_test.gleam
+test_name: get_text_test
+---
+Input:
+<p>Hello <strong>world</strong>!</p>
+
+Scraper:
+find_one p tag, get text content
+
+Output:
+Hello world!

@@ -1,0 +1,14 @@
+---
+version: 1.3.2
+title: get_namespace returns Html for regular elements
+file: ./test/presentable_soup/soup_test.gleam
+test_name: get_namespace_html_test
+---
+Input:
+<div>hello</div>
+
+Scraper:
+find_one div tag, get namespace
+
+Output:
+Html

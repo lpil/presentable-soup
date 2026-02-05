@@ -4,6 +4,22 @@ title: scrape_4_test
 file: ./test/presentable_soup/soup_test.gleam
 test_name: scrape_4_test
 ---
+Input:
+<header>
+  <p>zero</p>
+  <p><span>one</span></p>
+  <p><span>two</span></p>
+  <div>
+    <p><span>three</span></p>
+    <p><span>four</span></p>
+    <p>five</p>
+  </div>
+</header>
+
+Scraper:
+find_all p tags, then find_one span inside each, get tree (skips p without span)
+
+Output:
 <span>one</span>
 
 <span>two</span>

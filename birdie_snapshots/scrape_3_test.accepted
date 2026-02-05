@@ -4,6 +4,20 @@ title: scrape_3_test
 file: ./test/presentable_soup/soup_test.gleam
 test_name: scrape_3_test
 ---
+Input:
+<header>
+  <p>one</p>
+  <p>two</p>
+  <div>
+    <p>three</p>
+    <p>four</p>
+  </div>
+</header>
+
+Scraper:
+find_all p tags (including nested), get tree for each
+
+Output:
 <p>one</p>
 
 <p>two</p>

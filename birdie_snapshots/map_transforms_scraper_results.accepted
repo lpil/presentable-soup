@@ -1,0 +1,14 @@
+---
+version: 1.3.2
+title: map transforms scraper results
+file: ./test/presentable_soup/soup_test.gleam
+test_name: map_transform_test
+---
+Input:
+<ul><li>one</li><li>two</li><li>three</li></ul>
+
+Scraper:
+find_all li, get text, map to uppercase
+
+Output:
+ONE, TWO, THREE

@@ -1,0 +1,14 @@
+---
+version: 1.3.2
+title: map2 combines two scrapers
+file: ./test/presentable_soup/soup_test.gleam
+test_name: map2_test
+---
+Input:
+<article><h1>Title</h1><p>Content here</p></article>
+
+Scraper:
+find_one article, map2 to combine h1 text and p text
+
+Output:
+Title: Title | Content: Content here

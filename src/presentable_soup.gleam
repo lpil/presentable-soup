@@ -1,5 +1,5 @@
 import gleam/list
-import gleam/option
+import gleam/option.{type Option, None, Some}
 import gleam/string
 import houdini
 
@@ -241,15 +241,24 @@ fn sax(
 ) -> Result(state, Nil)
 
 pub fn scrape(scraper: Scraper(out), html: String) -> Result(out, Error) {
+  // case sax(html, scraper, apply) {
+  //   Ok(More(f)) -> {
+  //     case f(End) {
+  //       Done(value) -> Ok(value)
+  //       Fail | More(_) -> Error(NoContentMatched)
+  //     }
+  //   }
+  //   Ok(Done(value)) -> Ok(value)
+  //   Ok(Fail) -> Error(NoContentMatched)
+  //   Error(_) -> Error(ParsingFailed)
+  // }
+
   case sax(html, scraper, apply) {
-    Ok(More(f)) -> {
-      case f(End) {
-        Done(value) -> Ok(value)
-        Fail | More(_) -> Error(NoContentMatched)
+    Ok(scraper) ->
+      case scraper.end() {
+        Some(data) -> Ok(data)
+        None -> Error(NoContentMatched)
       }
-    }
-    Ok(Done(value)) -> Ok(value)
-    Ok(Fail) -> Error(NoContentMatched)
     Error(_) -> Error(ParsingFailed)
   }
 }
@@ -309,8 +318,8 @@ fn find_all_scraper(
           True -> {
             let self = fn(next) {
               let acc = case next {
-                option.None -> acc
-                option.Some(v) -> [v, ..acc]
+                None -> acc
+                Some(v) -> [v, ..acc]
               }
               find_all_scraper(acc, matchers, scraper)
             }
@@ -340,7 +349,7 @@ fn take_one(depth: Int, scraper: Scraper(t)) -> Scraper(t) {
 fn take_one_then_continue(
   depth: Int,
   scraper: Scraper(t1),
-  continuer: fn(option.Option(t1)) -> Scraper(t2),
+  continuer: fn(Option(t1)) -> Scraper(t2),
 ) -> Scraper(t2) {
   More(fn(event) {
     case event {
@@ -354,8 +363,8 @@ fn take_one_then_continue(
 
       End | EndElement(..) ->
         case apply(scraper, End) {
-          Done(v) -> continuer(option.Some(v))
-          Fail | More(_) -> continuer(option.None)
+          Done(v) -> continuer(Some(v))
+          Fail | More(_) -> continuer(None)
         }
         |> apply(End)
     }
@@ -471,11 +480,11 @@ pub fn aria(name: String, value: String) -> Matcher {
 }
 
 pub opaque type Scraper(value) {
-  Scraper(next: fn(SaxEvent) -> Scraper(value), end: fn() -> Result(value, Nil))
+  Scraper(next: fn(SaxEvent) -> Scraper(value), end: fn() -> Option(value))
 }
 
-fn done(end: fn() -> Result(t, Nil)) -> Scraper(t) {
-  Scraper(next: fn(_) { done(end) }, end:)
+fn done(end: t) -> Scraper(t) {
+  Scraper(next: fn(_) { done(end) }, end: fn() { Ok(Some(end)) })
 }
 
 fn fail() {
@@ -498,11 +507,9 @@ fn tree_scraper_fn(
       End ->
         case stack {
           [] -> fail()
-          [TextNode(_) as element] -> done(fn() { Ok(element) })
+          [TextNode(_) as element] -> done(element)
           [ElementNode(tag, attributes, children)] ->
-            done(fn() {
-              Ok(ElementNode(tag, attributes, list.reverse(children)))
-            })
+            done(ElementNode(tag, attributes, list.reverse(children)))
           _ -> panic as "Too many elements, failed"
         }
 
@@ -560,7 +567,7 @@ fn text_scraper_fn(acc: List(String)) -> fn(SaxEvent) -> Scraper(List(String)) {
     case event {
       Characters(string) -> fresh(text_scraper_fn([string, ..acc]))
       StartElement(..) | EndElement(..) -> fresh(text_scraper_fn(acc))
-      End -> done(fn() { Ok(list.reverse(acc)) })
+      End -> done(list.reverse(acc))
     }
   }
 }
@@ -572,7 +579,7 @@ pub fn get_tag() -> Scraper(String) {
 fn tag_scraper_fn() -> fn(SaxEvent) -> Scraper(String) {
   fn(event) {
     case event {
-      StartElement(tag:, ..) -> done(fn() { Ok(tag) })
+      StartElement(tag:, ..) -> done(tag)
       EndElement(..) | Characters(_) | End -> fresh(tag_scraper_fn())
     }
   }
@@ -585,7 +592,7 @@ pub fn get_namespace() -> Scraper(Namespace) {
 fn namespace_scraper_fn() -> fn(SaxEvent) -> Scraper(Namespace) {
   fn(event) {
     case event {
-      StartElement(namespace:, ..) -> done(fn() { Ok(namespace) })
+      StartElement(namespace:, ..) -> done(namespace)
       EndElement(..) | Characters(_) | End -> fresh(namespace_scraper_fn())
     }
   }
@@ -598,7 +605,7 @@ pub fn get_attributes() -> Scraper(List(#(String, String))) {
 fn attributes_scraper_fn() -> fn(SaxEvent) -> Scraper(List(#(String, String))) {
   fn(event) {
     case event {
-      StartElement(attributes:, ..) -> done(fn() { Ok(attributes) })
+      StartElement(attributes:, ..) -> done(attributes)
       EndElement(..) | Characters(_) | End -> fresh(attributes_scraper_fn())
     }
   }
@@ -607,26 +614,28 @@ fn attributes_scraper_fn() -> fn(SaxEvent) -> Scraper(List(#(String, String))) {
 pub fn map(scraper: Scraper(a), transform: fn(a) -> b) -> Scraper(b) {
   Scraper(next: fn(event) { map(scraper, transform).next(event) }, end: fn() {
     case scraper.end() {
-      Ok(value) -> Ok(transform(value))
-      Error(error) -> Error(error)
+      Some(value) -> Some(transform(value))
+      _ -> None
     }
   })
 }
 
+/// Take two scrapers and combine them into one. The final result from both is
+/// combined using a function to make the new final result.
 pub fn map2(
   scraper1: Scraper(t1),
   scraper2: Scraper(t2),
   transform: fn(t1, t2) -> out,
 ) -> Scraper(out) {
-  More(fn(event) {
-    case scraper1, scraper2 {
-      Fail, _ | _, Fail -> Fail
-      More(f1), More(f2) -> map2(f1(event), f2(event), transform)
-      More(f1), Done(_) -> map2(f1(event), scraper2, transform)
-      Done(_), More(f2) -> map2(scraper1, f2(event), transform)
-      Done(v1), Done(v2) -> Done(transform(v1, v2))
-    }
-  })
+  Scraper(
+    next: fn(event) { map2(scraper1, scraper2, transform).next(event) },
+    end: fn() {
+      case scraper1.end(), scraper2.end() {
+        Some(value1), Some(value2) -> Some(transform(value1, value2))
+        _, _ -> None
+      }
+    },
+  )
 }
 
 pub fn map3(

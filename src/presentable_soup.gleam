@@ -241,19 +241,7 @@ fn sax(
 ) -> Result(state, Nil)
 
 pub fn scrape(scraper: Scraper(out), html: String) -> Result(out, Error) {
-  // case sax(html, scraper, apply) {
-  //   Ok(More(f)) -> {
-  //     case f(End) {
-  //       Done(value) -> Ok(value)
-  //       Fail | More(_) -> Error(NoContentMatched)
-  //     }
-  //   }
-  //   Ok(Done(value)) -> Ok(value)
-  //   Ok(Fail) -> Error(NoContentMatched)
-  //   Error(_) -> Error(ParsingFailed)
-  // }
-
-  case sax(html, scraper, apply) {
+  case sax(html, scraper, fn(scraper, event) { scraper.next(event) }) {
     Ok(scraper) ->
       case scraper.end() {
         Some(data) -> Ok(data)
@@ -285,17 +273,20 @@ pub fn find_one(
   matching matchers: List(Matcher),
   scrape scraper: Scraper(t),
 ) -> Scraper(t) {
-  More(fn(event) {
-    case event {
-      StartElement(n, t, a) ->
-        case does_match(matchers, n, t, a) {
-          True -> apply(take_one(0, scraper), event)
-          False -> find_one(matchers, scraper)
-        }
-      EndElement(..) | Characters(_) -> find_one(matchers, scraper)
-      End -> Fail
-    }
-  })
+  Scraper(
+    next: fn(event) {
+      case event {
+        StartElement(n, t, a) ->
+          case does_match(matchers, n, t, a) {
+            True -> take_one(0, scraper).next(event)
+            False -> find_one(matchers, scraper)
+          }
+        EndElement(..) | Characters(_) -> find_one(matchers, scraper)
+        End -> fail()
+      }
+    },
+    end: fn() { None },
+  )
 }
 
 pub fn find_all(
@@ -310,40 +301,44 @@ fn find_all_scraper(
   matchers: List(Matcher),
   scraper: Scraper(t),
 ) -> Scraper(List(t)) {
-  More(fn(event) {
-    echo #(acc, event)
-    case event {
-      StartElement(n, t, a) ->
-        case does_match(matchers, n, t, a) {
-          True -> {
-            let self = fn(next) {
-              let acc = case next {
-                None -> acc
-                Some(v) -> [v, ..acc]
+  Scraper(
+    next: fn(event) {
+      case event {
+        StartElement(n, t, a) ->
+          case does_match(matchers, n, t, a) {
+            True -> {
+              let self = fn(next) {
+                let acc = case next {
+                  None -> acc
+                  Some(v) -> [v, ..acc]
+                }
+                find_all_scraper(acc, matchers, scraper)
               }
-              find_all_scraper(acc, matchers, scraper)
+              take_one_then_continue(0, scraper, self).next(event)
             }
-            take_one_then_continue(0, scraper, self)
-            |> apply(event)
+            False -> find_all_scraper(acc, matchers, scraper)
           }
-          False -> find_all_scraper(acc, matchers, scraper)
-        }
-      EndElement(..) | Characters(_) -> find_all_scraper(acc, matchers, scraper)
-      End -> Done(list.reverse(acc))
-    }
-  })
+        EndElement(..) | Characters(_) -> find_all_scraper(acc, matchers, scraper)
+        End -> done(list.reverse(acc))
+      }
+    },
+    end: fn() { Some(list.reverse(acc)) },
+  )
 }
 
 fn take_one(depth: Int, scraper: Scraper(t)) -> Scraper(t) {
-  More(fn(event) {
-    case event {
-      StartElement(..) -> take_one(depth + 1, apply(scraper, event))
-      EndElement(..) if depth <= 1 -> apply(scraper, End)
-      EndElement(..) -> take_one(depth - 1, apply(scraper, event))
-      Characters(..) -> take_one(depth, apply(scraper, event))
-      End -> apply(scraper, End)
-    }
-  })
+  Scraper(
+    next: fn(event) {
+      case event {
+        StartElement(..) -> take_one(depth + 1, scraper.next(event))
+        EndElement(..) if depth <= 1 -> scraper.next(End)
+        EndElement(..) -> take_one(depth - 1, scraper.next(event))
+        Characters(..) -> take_one(depth, scraper.next(event))
+        End -> scraper.next(End)
+      }
+    },
+    end: fn() { None },
+  )
 }
 
 fn take_one_then_continue(
@@ -351,31 +346,27 @@ fn take_one_then_continue(
   scraper: Scraper(t1),
   continuer: fn(Option(t1)) -> Scraper(t2),
 ) -> Scraper(t2) {
-  More(fn(event) {
-    case event {
-      StartElement(..) ->
-        take_one_then_continue(depth + 1, apply(scraper, event), continuer)
-      EndElement(..) if depth > 1 -> {
-        take_one_then_continue(depth - 1, apply(scraper, event), continuer)
-      }
-      Characters(..) ->
-        take_one_then_continue(depth, apply(scraper, event), continuer)
-
-      End | EndElement(..) ->
-        case apply(scraper, End) {
-          Done(v) -> continuer(Some(v))
-          Fail | More(_) -> continuer(None)
+  Scraper(
+    next: fn(event) {
+      case event {
+        StartElement(..) ->
+          take_one_then_continue(depth + 1, scraper.next(event), continuer)
+        EndElement(..) if depth > 1 ->
+          take_one_then_continue(depth - 1, scraper.next(event), continuer)
+        Characters(..) ->
+          take_one_then_continue(depth, scraper.next(event), continuer)
+        EndElement(..) -> {
+          let final_scraper = scraper.next(End)
+          continuer(final_scraper.end())
         }
-        |> apply(End)
-    }
-  })
-}
-
-fn apply(scraper: Scraper(t), event: SaxEvent) -> Scraper(t) {
-  case scraper {
-    More(f) -> f(event)
-    Done(_) | Fail -> scraper
-  }
+        End -> {
+          let final_scraper = scraper.next(End)
+          continuer(final_scraper.end()).next(End)
+        }
+      }
+    },
+    end: fn() { None },
+  )
 }
 
 fn does_match(
@@ -483,16 +474,16 @@ pub opaque type Scraper(value) {
   Scraper(next: fn(SaxEvent) -> Scraper(value), end: fn() -> Option(value))
 }
 
-fn done(end: t) -> Scraper(t) {
-  Scraper(next: fn(_) { done(end) }, end: fn() { Ok(Some(end)) })
+fn done(value: t) -> Scraper(t) {
+  Scraper(next: fn(_) { done(value) }, end: fn() { Some(value) })
 }
 
-fn fail() {
-  Scraper(next: fn(_) { fail() }, end: fn() { Error(Nil) })
+fn fail() -> Scraper(t) {
+  Scraper(next: fn(_) { fail() }, end: fn() { None })
 }
 
 fn fresh(next: fn(SaxEvent) -> Scraper(t)) -> Scraper(t) {
-  Scraper(next:, end: fn() { Error(Nil) })
+  Scraper(next:, end: fn() { None })
 }
 
 pub fn get_tree() -> Scraper(ElementTree) {
@@ -612,12 +603,15 @@ fn attributes_scraper_fn() -> fn(SaxEvent) -> Scraper(List(#(String, String))) {
 }
 
 pub fn map(scraper: Scraper(a), transform: fn(a) -> b) -> Scraper(b) {
-  Scraper(next: fn(event) { map(scraper, transform).next(event) }, end: fn() {
-    case scraper.end() {
-      Some(value) -> Some(transform(value))
-      _ -> None
-    }
-  })
+  Scraper(
+    next: fn(event) { map(scraper.next(event), transform) },
+    end: fn() {
+      case scraper.end() {
+        Some(value) -> Some(transform(value))
+        None -> None
+      }
+    },
+  )
 }
 
 /// Take two scrapers and combine them into one. The final result from both is
@@ -628,7 +622,9 @@ pub fn map2(
   transform: fn(t1, t2) -> out,
 ) -> Scraper(out) {
   Scraper(
-    next: fn(event) { map2(scraper1, scraper2, transform).next(event) },
+    next: fn(event) {
+      map2(scraper1.next(event), scraper2.next(event), transform)
+    },
     end: fn() {
       case scraper1.end(), scraper2.end() {
         Some(value1), Some(value2) -> Some(transform(value1, value2))

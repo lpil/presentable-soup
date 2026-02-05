@@ -12,6 +12,8 @@ gleam add presentable_soup@1
 ```
 ```gleam
 import presentable_soup as soup
+import gleam/list
+import gleam/result
 
 pub fn main() {
   // You've got some HTML. Maybe this is downloaded from a website, or it's
@@ -71,7 +73,7 @@ pub fn main() {
   // To do this we can combine multiple scrapers into one:
   let id_and_text = {
     use attrs, txt <- soup.merge2(soup.attributes(), soup.text_content())
-    let id = dict.get(attrs, "id") |> result.unwrap("<no id>")
+    let id = list.key_find(attrs, "id") |> result.unwrap("<no id>")
     "#" <> id <> ": " <> text
   }
   soup.element([soup.with_tag("h1")])

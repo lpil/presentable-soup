@@ -471,30 +471,44 @@ pub fn aria(name: String, value: String) -> Matcher {
 }
 
 pub opaque type Scraper(value) {
-  More(fn(SaxEvent) -> Scraper(value))
-  Done(value)
-  Fail
+  Scraper(next: fn(SaxEvent) -> Scraper(value), end: fn() -> Result(value, Nil))
+}
+
+fn done(end: fn() -> Result(t, Nil)) -> Scraper(t) {
+  Scraper(next: fn(_) { done(end) }, end:)
+}
+
+fn fail() {
+  Scraper(next: fn(_) { fail() }, end: fn() { Error(Nil) })
+}
+
+fn fresh(next: fn(SaxEvent) -> Scraper(t)) -> Scraper(t) {
+  Scraper(next:, end: fn() { Error(Nil) })
 }
 
 pub fn get_tree() -> Scraper(ElementTree) {
-  tree_scraper([])
+  fresh(tree_scraper_fn([]))
 }
 
-fn tree_scraper(stack: List(ElementTree)) -> Scraper(ElementTree) {
-  More(fn(event) {
+fn tree_scraper_fn(
+  stack: List(ElementTree),
+) -> fn(SaxEvent) -> Scraper(ElementTree) {
+  fn(event) {
     case event {
       End ->
         case stack {
-          [] -> Fail
-          [TextNode(_) as element] -> Done(element)
+          [] -> fail()
+          [TextNode(_) as element] -> done(fn() { Ok(element) })
           [ElementNode(tag, attributes, children)] ->
-            Done(ElementNode(tag, attributes, list.reverse(children)))
+            done(fn() {
+              Ok(ElementNode(tag, attributes, list.reverse(children)))
+            })
           _ -> panic as "Too many elements, failed"
         }
 
       StartElement(tag:, attributes:, ..) -> {
         let element = ElementNode(tag:, attributes:, children: [])
-        tree_scraper([element, ..stack])
+        fresh(tree_scraper_fn([element, ..stack]))
       }
 
       EndElement(..) -> {
@@ -510,85 +524,91 @@ fn tree_scraper(stack: List(ElementTree)) -> Scraper(ElementTree) {
           ] -> {
             let element = ElementNode(tag, attributes, list.reverse(children))
             let parent = ElementNode(p_tag, p_attributes, [element, ..siblings])
-            tree_scraper([parent, ..stack])
+            fresh(tree_scraper_fn([parent, ..stack]))
           }
 
           [ElementNode(tag:, attributes:, children:), ..stack] -> {
             let element = ElementNode(tag, attributes, list.reverse(children))
-            tree_scraper([element, ..stack])
+            fresh(tree_scraper_fn([element, ..stack]))
           }
 
           _ -> panic as "EndElement event without StartElement event"
         }
       }
 
-      Characters("") -> tree_scraper(stack)
+      Characters("") -> fresh(tree_scraper_fn(stack))
 
       Characters(text) ->
         case stack {
           [ElementNode(tag:, attributes:, children:), ..stack] -> {
             let element =
               ElementNode(tag, attributes, [TextNode(text), ..children])
-            tree_scraper([element, ..stack])
+            fresh(tree_scraper_fn([element, ..stack]))
           }
           _ -> panic as "Characters event without StartElement event"
         }
     }
-  })
+  }
 }
 
 pub fn get_text() -> Scraper(List(String)) {
-  text_scraper([])
+  fresh(text_scraper_fn([]))
 }
 
-fn text_scraper(acc: List(String)) -> Scraper(List(String)) {
-  More(fn(event) {
+fn text_scraper_fn(acc: List(String)) -> fn(SaxEvent) -> Scraper(List(String)) {
+  fn(event) {
     case event {
-      Characters(string) -> text_scraper([string, ..acc])
-      StartElement(..) | EndElement(..) -> text_scraper(acc)
-      End -> Done(list.reverse(acc))
+      Characters(string) -> fresh(text_scraper_fn([string, ..acc]))
+      StartElement(..) | EndElement(..) -> fresh(text_scraper_fn(acc))
+      End -> done(fn() { Ok(list.reverse(acc)) })
     }
-  })
+  }
 }
 
 pub fn get_tag() -> Scraper(String) {
-  More(fn(event) {
+  fresh(tag_scraper_fn())
+}
+
+fn tag_scraper_fn() -> fn(SaxEvent) -> Scraper(String) {
+  fn(event) {
     case event {
-      End -> Fail
-      EndElement(..) | Characters(_) -> get_tag()
-      StartElement(tag:, ..) -> Done(tag)
+      StartElement(tag:, ..) -> done(fn() { Ok(tag) })
+      EndElement(..) | Characters(_) | End -> fresh(tag_scraper_fn())
     }
-  })
+  }
 }
 
 pub fn get_namespace() -> Scraper(Namespace) {
-  More(fn(event) {
-    case event {
-      End -> Fail
-      EndElement(..) | Characters(_) -> get_namespace()
-      StartElement(namespace:, ..) -> Done(namespace)
-    }
-  })
+  fresh(namespace_scraper_fn())
 }
 
-pub fn get_attributes(
-  extract: fn(List(#(String, String))) -> value,
-) -> Scraper(value) {
-  More(fn(event) {
+fn namespace_scraper_fn() -> fn(SaxEvent) -> Scraper(Namespace) {
+  fn(event) {
     case event {
-      End -> Fail
-      EndElement(..) | Characters(_) -> get_attributes(extract)
-      StartElement(attributes:, ..) -> Done(extract(attributes))
+      StartElement(namespace:, ..) -> done(fn() { Ok(namespace) })
+      EndElement(..) | Characters(_) | End -> fresh(namespace_scraper_fn())
     }
-  })
+  }
+}
+
+pub fn get_attributes() -> Scraper(List(#(String, String))) {
+  fresh(attributes_scraper_fn())
+}
+
+fn attributes_scraper_fn() -> fn(SaxEvent) -> Scraper(List(#(String, String))) {
+  fn(event) {
+    case event {
+      StartElement(attributes:, ..) -> done(fn() { Ok(attributes) })
+      EndElement(..) | Characters(_) | End -> fresh(attributes_scraper_fn())
+    }
+  }
 }
 
 pub fn map(scraper: Scraper(a), transform: fn(a) -> b) -> Scraper(b) {
-  More(fn(event) {
-    case scraper {
-      More(scrape) -> map(scrape(event), transform)
-      Fail -> Fail
-      Done(scraped) -> Done(transform(scraped))
+  Scraper(next: fn(event) { map(scraper, transform).next(event) }, end: fn() {
+    case scraper.end() {
+      Ok(value) -> Ok(transform(value))
+      Error(error) -> Error(error)
     }
   })
 }

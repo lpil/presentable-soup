@@ -4,6 +4,16 @@ title: scrape_2_test
 file: ./test/presentable_soup/soup_test.gleam
 test_name: scrape_2_test
 ---
+Input:
+<header>
+  <p>one</p>
+  <p>two</p>
+</header>
+
+Scraper:
+find_all p tags, get tree for each
+
+Output:
 <p>one</p>
 
 <p>two</p>

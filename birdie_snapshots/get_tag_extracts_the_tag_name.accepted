@@ -1,0 +1,14 @@
+---
+version: 1.3.2
+title: get_tag extracts the tag name
+file: ./test/presentable_soup/soup_test.gleam
+test_name: get_tag_test
+---
+Input:
+<div><span>hello</span></div>
+
+Scraper:
+find_one span tag, get tag name
+
+Output:
+span

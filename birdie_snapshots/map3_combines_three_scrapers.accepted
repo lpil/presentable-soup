@@ -1,0 +1,14 @@
+---
+version: 1.3.2
+title: map3 combines three scrapers
+file: ./test/presentable_soup/soup_test.gleam
+test_name: map3_test
+---
+Input:
+<div data-id="42"><span class="name">Alice</span><span class="role">Admin</span></div>
+
+Scraper:
+find_one div, map3 to combine attributes, .name text, and .role text
+
+Output:
+Id: 42, Name: Alice, Role: Admin

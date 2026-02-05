@@ -4,4 +4,14 @@ title: scrape_0_test
 file: ./test/presentable_soup/soup_test.gleam
 test_name: scrape_0_test
 ---
+Input:
+<header>
+  <h1>Lustre Labs</h1>
+  Woop!
+</header>
+
+Scraper:
+find_one h1 tag, get tree
+
+Output:
 <h1>Lustre Labs</h1>

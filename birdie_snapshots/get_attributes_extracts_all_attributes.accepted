@@ -1,0 +1,14 @@
+---
+version: 1.3.2
+title: get_attributes extracts all attributes
+file: ./test/presentable_soup/soup_test.gleam
+test_name: get_attributes_test
+---
+Input:
+<a href="/home" class="link primary" data-id="123">Home</a>
+
+Scraper:
+find_one a tag, get all attributes
+
+Output:
+href=/home, class=link primary, data-id=123

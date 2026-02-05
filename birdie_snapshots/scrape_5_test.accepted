@@ -4,4 +4,17 @@ title: scrape_5_test
 file: ./test/presentable_soup/soup_test.gleam
 test_name: scrape_5_test
 ---
-<span>five</span>
+Input:
+<p><span>one</span><span><span>two</span></span><span>three</span></p>
+
+Scraper:
+find_all p tags, find_all spans inside each, flatten results
+
+Output:
+<span>one</span>
+
+<span>
+  <span>two</span>
+</span>
+
+<span>three</span>

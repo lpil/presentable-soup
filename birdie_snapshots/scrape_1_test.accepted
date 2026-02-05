@@ -4,6 +4,18 @@ title: scrape_1_test
 file: ./test/presentable_soup/soup_test.gleam
 test_name: scrape_1_test
 ---
+Input:
+<header>
+  <h1>
+    <br class=1>
+    <br class=2>
+  </h1>
+</header>
+
+Scraper:
+find_one h1 tag, get tree
+
+Output:
 <h1>
   <br class="1">
   <br class="2">

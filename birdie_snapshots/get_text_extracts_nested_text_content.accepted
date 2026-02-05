@@ -1,0 +1,14 @@
+---
+version: 1.3.2
+title: get_text extracts nested text content
+file: ./test/presentable_soup/soup_test.gleam
+test_name: get_text_nested_test
+---
+Input:
+<div><p>First</p><p>Second</p></div>outside<div>another</div>
+
+Scraper:
+find_one div tag, get all nested text content
+
+Output:
+First|Second

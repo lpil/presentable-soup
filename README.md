@@ -148,3 +148,8 @@ pub fn contact_page_test() {
 ```
 
 Further documentation can be found at <https://hexdocs.pm/presentable_soup>.
+
+## Thanks
+
+A huge thank you to Zachary Dean for making [htmerl](https://github.com/zadean/htmerl),
+the excellent streaming HTML parser this package uses.

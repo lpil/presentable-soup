@@ -1,16 +1,3 @@
-# Presentable Soup
-
-Efficient querying, scraping, and parsing of HTML. Good for snapshot testing too!
-
-[![Package Version](https://img.shields.io/hexpm/v/presentable_soup)](https://hex.pm/packages/presentable_soup)
-[![Hex Docs](https://img.shields.io/badge/hex-docs-ffaff3)](https://hexdocs.pm/presentable_soup/)
-
-This package supports the Gleam Erlang target.
-
-```sh
-gleam add presentable_soup@2
-```
-```gleam
 import gleam/list
 import gleam/result
 import gleam/string
@@ -128,33 +115,3 @@ pub fn main() {
 pub type Pokemon {
   Pokemon(name: String, type_: String)
 }
-
-// The returned elements can be rendered as HTML. This is especially useful
-// for snapshot testing!
-// Don't test your generated HTML by looking for sub-strings, instead query
-// for the parts of the page that matter for each test and then snapshot it
-// with a library like Giacomo Cavalieri's Birdie.
-pub fn contact_page_test() {
-  let webpage = my_app.handle_request("/contact")
-
-  // Query the page. In this test I want to focus on the contact form.
-  let assert Ok(found) =
-    soup.elements([soup.with_tag("form"), soup.with_class("contact-form")])
-    |> soup.return(soup.element_tree())
-    |> soup.scrape(webpage)
-
-  // Render the matched HTML, create a descriptive snapshot string, and
-  // snapshot it!
-  let snapshot =
-    "Contact page `form` with class `contact-form`\n\n"
-    <> soup.elements_to_string(found)
-  birdie.snap("contact page form", snapshot)
-}
-```
-
-Further documentation can be found at <https://hexdocs.pm/presentable_soup>.
-
-## Thanks
-
-A huge thank you to Zachary Dean for making [htmerl](https://github.com/zadean/htmerl),
-the excellent streaming HTML parser this package uses.

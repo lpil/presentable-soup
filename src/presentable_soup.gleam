@@ -541,6 +541,9 @@ fn fresh(next: fn(SaxEvent) -> Scraper(t)) -> Scraper(t) {
 /// Get the element add its descendants as an `ElementTree`. This may be useful
 /// for snapshot testing when combined with `elements_to_string`.
 ///
+/// Warning: Building an element tree can use a lot of memory. Prefer to use
+/// the other scrapers in this module as they are much more efficient.
+///
 pub fn element_tree() -> Scraper(ElementTree) {
   fresh(tree_scraper_fn([]))
 }
